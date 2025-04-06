@@ -1,0 +1,14 @@
+#inp file name eg. t1.inp
+test.inp
+
+#Stiffiness Hourglass Control parameter
+0.013
+
+#Viscosity Hourglass Control parameter
+0.05
+
+#factor of time step
+0.8
+
+#time interval
+1e-2

@@ -1,0 +1,72 @@
+# Explicit3D 目录的 CMake 配置
+# 创建 obj 库
+
+# --- 查找依赖项 ---
+
+# 查找 OpenMP
+find_package(OpenMP QUIET)
+if(OpenMP_CXX_FOUND)
+    message(STATUS "找到 OpenMP 支持 (版本: ${OpenMP_CXX_VERSION})")
+    set(PROJECT_USE_OPENMP TRUE)
+else()
+    message(WARNING "未找到 OpenMP 支持。如果需要，请确保已安装并配置好 OpenMP 运行时，或者检查 Clang 安装是否完整。多线程加速将不可用。")
+    set(PROJECT_USE_OPENMP FALSE)
+endif()
+
+# 查找 VTK
+find_package(VTK REQUIRED COMPONENTS
+    CommonCore
+    CommonDataModel
+    IOXML
+)
+message(STATUS "成功找到所需的 VTK 组件。将使用 VTK 提供的导入目标 (VTK::*)。")
+
+# 查找 Eigen3
+find_package(Eigen3 REQUIRED NO_MODULE)
+message(STATUS "成功找到 Eigen3 (版本: ${Eigen3_VERSION})。将使用 Eigen3 提供的导入目标 (Eigen3::Eigen)。")
+
+# 收集源文件
+file(GLOB EXPLICIT3D_SOURCES "source/*.cpp")
+file(GLOB EXPLICIT3D_HEADERS "include/*.h")
+
+# --- Release模式下的编译优化选项 ---
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    # GCC或Clang编译器
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG")
+    message(STATUS "为Explicit3D (Release模式)设置GCC/Clang优化选项: -O3 -DNDEBUG -march=native")
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+    # MSVC编译器
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /DNDEBUG /arch:AVX2 /GL")
+    message(STATUS "为Explicit3D (Release模式)设置MSVC优化选项: /O2 /DNDEBUG /arch:AVX2 /GL")
+endif()
+
+# 创建对象库
+add_library(Explicit3D OBJECT ${EXPLICIT3D_SOURCES} ${EXPLICIT3D_HEADERS})
+
+# 设置对象库属性，使其可以被正常链接
+set_target_properties(Explicit3D PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+    INTERFACE_POSITION_INDEPENDENT_CODE ON
+)
+
+# 设置包含目录
+target_include_directories(Explicit3D PUBLIC 
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# --- 链接依赖库 ---
+target_link_libraries(Explicit3D PUBLIC
+    VTK::CommonCore
+    VTK::CommonDataModel
+    VTK::IOXML
+    Eigen3::Eigen
+)
+
+if(PROJECT_USE_OPENMP)
+    target_link_libraries(Explicit3D PUBLIC OpenMP::OpenMP_CXX)
+    message(STATUS "已为目标 Explicit3D 链接 OpenMP。")
+endif()
+
+# 导出变量到父 CMake 作用域
+set(EXPLICIT3D_LIBRARY Explicit3D PARENT_SCOPE)
