@@ -56,8 +56,8 @@ endif()
 # --- Release模式下的编译优化选项 ---
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     # GCC或Clang编译器
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG -march=native")
-    message(STATUS "为Release模式设置GCC/Clang优化选项: -O3 -DNDEBUG -march=native")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG")
+    message(STATUS "为Release模式设置GCC/Clang优化选项: -O3 -DNDEBUG")
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
     # MSVC编译器
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /DNDEBUG /arch:AVX2 /GL")
