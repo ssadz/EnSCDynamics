@@ -5,7 +5,7 @@
 #include <array>        // 包含 std::array
 #include <map>          // 包含 std::map
 #include <tuple>        // 包含 std::tuple
-#include <string>       // 包含 std::string (可能被间接引入，但这里明确包含它)
+#include <string>       // 包含 std::string (可能被间接引入，但这里明确包含aa它)
 #include <chrono>       // 包含时间相关 (如果需要计时功能)
 #include <numeric>      // 包含 std::iota (如果需要 RCM 优化)
 #include <algorithm>    // 包含 std::sort 等 (如果需要 RCM 优化)
@@ -111,7 +111,7 @@ namespace EnSC {
 		std::vector<Types::Real> generateUnitCoordinates(int particlesPerEdge) const; // 生成单位坐标
 		void processInteractionElements(int nLayers, int particlesPerEdge, const std::vector<Types::Real>& unitCoords); // 处理交互单元及粒子
 		void populateElementMatrices(int eleIdx, Eigen::Matrix<Types::Real, 8, 3>& xyzMatrix, Eigen::Matrix<Types::Real, 8, 3>& velMatrix) const; // 获取单元节点坐标和速度
-		void generateVirtualParticlesForFace(int faceIdx, int nLayers, int particlesPerEdge, const std::vector<Types::Real>& unitCoords, std::vector<std::array<Types::Real, 3>>& unitPoints, std::vector<int>& particleIndices, int& pointIdx, int& particleIndex, const Eigen::Matrix<Types::Real, 8, 3>& xyzMatrix, const Eigen::Matrix<Types::Real, 8, 3>& velMatrix); // 为各个面生成虚拟粒子
+		void generateVirtualParticlesForFace(int faceIdx, int nLayers, int particlesPerEdge, const std::vector<Types::Real>& unitCoords, const Eigen::Matrix<Types::Real, 8, 3>& xyzMatrix, const Eigen::Matrix<Types::Real, 8, 3>& velMatrix, std::vector<std::array<Types::Real, 3>>& tempElementCoords, std::vector<std::array<Types::Real, 3>>& tempElementVels, std::vector<std::array<Types::Real, 3>>& tempElementUnitCoords); // 为各个面生成虚拟粒子
 		void setUnitPointForFace(int faceIdx, Types::Real x, Types::Real y, Types::Real offset, std::array<Types::Real, 3>& unitPoint) const; // 设置虚拟粒子单位坐标
 		void resizeFsiSharedData();                 // 调整 FSI 共享数据大小
 
