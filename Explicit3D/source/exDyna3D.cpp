@@ -45,7 +45,7 @@ namespace EnSC {
 
 	void exDyna3D::run() {
 		init();
-		get_fsiSph_virtualParticles_and_vel(2, 0.25);
+		get_fsiSph_virtualParticles_and_vel(2, 1.0/10.0);
 		while (time < totalTime) {
 			update_minVertex_perMaterial_and_dt();
 			computeSate();
@@ -1209,51 +1209,107 @@ namespace EnSC {
 		}
 	}
 
+    static Eigen::Matrix<Types::Real, 3, 8> compute_shape_derivatives_at_point(const std::array<Types::Real, 3>& unitPoint) {
+		Eigen::Matrix<Types::Real, 3, 8> derivatives_matrix_unit;
+	    Element_HexN8 temp_ele; // 需要一个单元实例来调用方法
+	    for (int iNode = 0; iNode < 8; ++iNode) {
+         // 调用 Element_HexN8 中计算三个方向导数的函数
+         std::array<Types::Real, 3> derivs = temp_ele.get_shapeFunctionDerivatives(iNode, unitPoint);
+         derivatives_matrix_unit(0, iNode) = derivs[0]; // dNi/dxi
+         derivatives_matrix_unit(1, iNode) = derivs[1]; // dNi/deta
+         derivatives_matrix_unit(2, iNode) = derivs[2]; // dNi/dzeta
+		 }
+		 return derivatives_matrix_unit;
+	}
+    
 	void exDyna3D::generateVirtualParticlesForFace(
-		int faceIdx, int nLayers,
-		const Eigen::Matrix<Types::Real, 8, 3>& xyzMatrix,
-		const Eigen::Matrix<Types::Real, 8, 3>& velMatrix,
-		// 输出参数 - 附加到这些向量
-		std::vector<std::array<Types::Real, 3>>& tempElementCoords,
-		std::vector<std::array<Types::Real, 3>>& tempElementVels,
-		std::vector<std::array<Types::Real, 3>>& tempElementUnitCoords
+		int faceIdx,                       // 当前处理的面索引 (0-5)
+		int nLayers,                       // 要生成的粒子层数
+		Types::Real virtualParticlesDist,  // 层之间的目标物理距离
+		const Eigen::Matrix<Types::Real, 8, 3>& xyzMatrix, // 单元节点的当前物理坐标
+		const Eigen::Matrix<Types::Real, 8, 3>& velMatrix, // 单元节点的当前速度
+		std::vector<std::array<Types::Real, 3>>& tempElementCoords, // 输出: 生成的粒子坐标
+		std::vector<std::array<Types::Real, 3>>& tempElementVels,   // 输出: 生成的粒子速度
+		std::vector<std::array<Types::Real, 3>>& tempElementUnitCoords // 输出: 生成的粒子对应的单位坐标
 	) {
-		Element_HexN8 ele; // 用于访问形函数的临时单元对象
-		Eigen::Matrix<Types::Real, 1, 8> shapeFuncValue;
-		std::array<Types::Real, 3> unitPoint; // 存储 {xi, eta, zeta}
+		// --- 步骤 1: 确定面中心点和单位法线方向 ---
+		std::array<Types::Real, 3> unitPointSurface; // 面中心的单位坐标
+		Eigen::Matrix<Types::Real, 3, 1> n_unit_vec; // 单位坐标系中的法线向量 (指向单元内部)
 
-		// 检查 nLayers 是否有效
-		if (nLayers <= 0) {
-			return; // 不生成粒子
+		// 根据面索引 faceIdx 确定面中心坐标和法线方向
+		switch (faceIdx)
+		{
+			case 0: unitPointSurface = {-1.0, 0.0, 0.0}; n_unit_vec << 1.0, 0.0, 0.0; break; // xi=-1 面, 法线 +xi
+			case 1: unitPointSurface = { 1.0, 0.0, 0.0}; n_unit_vec << -1.0, 0.0, 0.0; break; // xi= 1 面, 法线 -xi
+			case 2: unitPointSurface = { 0.0, -1.0, 0.0}; n_unit_vec << 0.0, 1.0, 0.0; break; // eta=-1 面, 法线 +eta
+			case 3: unitPointSurface = { 0.0, 1.0, 0.0}; n_unit_vec << 0.0, -1.0, 0.0; break; // eta= 1 面, 法线 -eta
+			case 4: unitPointSurface = { 0.0, 0.0, -1.0}; n_unit_vec << 0.0, 0.0, 1.0; break; // zeta=-1 面, 法线 +zeta
+			case 5: unitPointSurface = { 0.0, 0.0, 1.0}; n_unit_vec << 0.0, 0.0, -1.0; break; // zeta= 1 面, 法线 -zeta
+			default:
+				// 增加健壮性：记录错误或抛出异常
+				std::cerr << "错误: 在 generateVirtualParticlesForFace 中遇到无效的面索引 (" << faceIdx << ")" << std::endl;
+				return; // 停止处理这个无效的面
 		}
 
-		// 计算沿法线方向的单位坐标步长 (假设分布在单位距离 1.0 内)
-		Types::Real unitNormalStep = 1.0 / static_cast<Types::Real>(nLayers);
+		// --- 步骤 2: 计算面中心点的雅可比矩阵 ---
+		// 调用上面定义的辅助函数计算形函数导数
+		Eigen::Matrix<Types::Real, 3, 8> shape_derivatives_unit_at_surface = compute_shape_derivatives_at_point(unitPointSurface);
+		// 计算雅可比矩阵 J(3x3) = d(x,y,z)/d(xi,eta,zeta) = (dN/dXi)(3x8) * X(8x3)
+		Eigen::Matrix<Types::Real, 3, 3> J = shape_derivatives_unit_at_surface * xyzMatrix;
 
-		// 只循环 nLayers 次，沿法线生成粒子
+		// --- 步骤 3: 计算尺度因子 s ---
+		// 将单位法线映射到物理空间的法线方向向量
+		Eigen::Matrix<Types::Real, 3, 1> n_real = J * n_unit_vec;
+		// 计算物理空间法向量的模长的平方
+		Types::Real s_squared = n_real.squaredNorm();
+		Types::Real s = 0.0; // 初始化尺度因子
+		// 定义一个小的容差值，避免除零或处理退化单元时出问题
+		const Types::Real tolerance_squared = 1e-24; // 比较平方值以避免开方
+
+		if (s_squared > tolerance_squared) {
+			s = std::sqrt(s_squared); // 计算尺度因子 s = ||J * n_unit||
+		} else {
+			// 处理退化映射情况：无法可靠地确定步长
+			// 记录警告信息，并跳过这个面的粒子生成
+			std::cerr << "警告: 面 " << faceIdx << " 检测到退化映射或零尺度因子 (s^2 = " << s_squared
+					<< ")。跳过此面的粒子生成。" << std::endl;
+			return; // 退出此函数，不为这个面生成粒子
+		}
+
+		// --- 步骤 4: 计算单位坐标步长 ---
+		// 根据期望的物理距离和尺度因子，计算在单位坐标系中需要的步长
+		Types::Real unit_step = virtualParticlesDist / s;
+
+		// --- 步骤 5: 生成粒子层 ---
+		Element_HexN8 ele_for_shape_func; // 创建一个单元实例用于计算形函数值
+		Eigen::Matrix<Types::Real, 1, 8> shapeFuncValue; // 用于存储形函数值的矩阵 N(1x8)
+
+		// 从面上的点 (k=0) 开始，向内生成 nLayers 层粒子
 		for (int k = 0; k < nLayers; ++k) {
-			// 计算当前层的法向偏移 (放置在层厚度的中心)
-			Types::Real offset = (static_cast<Types::Real>(k) + 0.5) * unitNormalStep;
+			// 计算当前第 k 层的单位坐标点
+			std::array<Types::Real, 3> unitPointLayer;
+			unitPointLayer[0] = unitPointSurface[0] + k * unit_step * n_unit_vec(0);
+			unitPointLayer[1] = unitPointSurface[1] + k * unit_step * n_unit_vec(1);
+			unitPointLayer[2] = unitPointSurface[2] + k * unit_step * n_unit_vec(2);
 
-			// 计算三维单位坐标 {xi, eta, zeta}，固定 u=0, v=0
-			// 如果 setUnitPointForFace 抛出异常，程序将终止（无 try-catch）
-			setUnitPointForFace(faceIdx, 0.0, 0.0, offset, unitPoint);
-
-			// 计算 unitPoint 处的形函数值
+			// 计算 unitPointLayer 处的形函数值 N
 			for (int n = 0; n < 8; ++n) {
-				shapeFuncValue(0, n) = ele.get_shapeFunctionValue(n, unitPoint);
+				// 使用单元实例获取节点 n 在 unitPointLayer 处的形函数值
+				shapeFuncValue(0, n) = ele_for_shape_func.get_shapeFunctionValue(n, unitPointLayer);
 			}
 
-			// 插值计算物理坐标和速度
+			// 插值计算物理坐标: realCoord(1x3) = N(1x8) * X(8x3)
 			auto realCoordMat = shapeFuncValue * xyzMatrix;
-			auto velocityMat = shapeFuncValue * velMatrix;
 			std::array<Types::Real, 3> coord = {realCoordMat(0, 0), realCoordMat(0, 1), realCoordMat(0, 2)};
+
+			// 插值计算速度: velocity(1x3) = N(1x8) * V(8x3)
+			auto velocityMat = shapeFuncValue * velMatrix;
 			std::array<Types::Real, 3> vel = {velocityMat(0, 0), velocityMat(0, 1), velocityMat(0, 2)};
 
-			// --- 附加到临时单元向量 ---
+			// 存储计算得到的坐标、速度和对应的单位坐标
 			tempElementCoords.push_back(coord);
 			tempElementVels.push_back(vel);
-			tempElementUnitCoords.push_back(unitPoint); // 存储其单位坐标
+			tempElementUnitCoords.push_back(unitPointLayer); // 存储用于生成的单位坐标
 		}
 	}
 
@@ -1305,98 +1361,73 @@ namespace EnSC {
 		}
 	}
 
-	void exDyna3D::processInteractionElements(int nLayers, Types::Real virtualParticlesDist) {
-		// 定义 lambda 表达式，替代原来的 distSq 函数
-		auto calculateDistSq = [](const std::array<Types::Real, 3>& p1, const std::array<Types::Real, 3>& p2) -> Types::Real {
-			Types::Real dx = p1[0] - p2[0];
-			Types::Real dy = p1[1] - p2[1];
-			Types::Real dz = p1[2] - p2[2];
-			return dx * dx + dy * dy + dz * dz;
-		};
+	// ... existing code ...
+    void exDyna3D::processInteractionElements(int nLayers, Types::Real virtualParticlesDist) {
+        // --- 准备最终的全局列表 ---
+        std::vector<std::array<Types::Real, 3>> finalGlobalCoords;
+        std::vector<std::array<Types::Real, 3>> finalGlobalVels;
 
-		// --- 准备最终的全局列表 ---
-		std::vector<std::array<Types::Real, 3>> finalGlobalCoords;
-		std::vector<std::array<Types::Real, 3>> finalGlobalVels;
+        // --- 处理单元前清除内部映射表 ---
+        map_eleIndex_virParticle_unit_data.clear();
+        map_eleIndex_virParticles_index.clear();
 
-		// --- 处理单元前清除内部映射表 ---
-		map_eleIndex_virParticle_unit_data.clear();
-		map_eleIndex_virParticles_index.clear();
+        // --- 遍历边界单元 ---
+        for (const auto& elementFacePair : fsiBoundaryElementFaces) {
+            int eleIdx = elementFacePair.first;
+            const auto& faces = elementFacePair.second;
+            int nFaces = faces.size();
+            if (nFaces <= 0) continue;
 
-		// --- 定义合并参数 ---
-		const Types::Real mergeFactor = 0.05; // 合并因子
-		// 使用 virtualParticlesDist 计算合并阈值的平方
-		const Types::Real mergeThresholdSq = (virtualParticlesDist > 1e-9) ?
-											std::pow(mergeFactor * virtualParticlesDist, 2) :
-											-1.0; // 如果 virtualParticlesDist 无效，则禁用合并
+            // --- 当前单元生成粒子的临时存储 ---
+            std::vector<std::array<Types::Real, 3>> tempCoords;
+            std::vector<std::array<Types::Real, 3>> tempVels;
+            std::vector<std::array<Types::Real, 3>> tempUnitCoords; // 存储原始单位坐标
 
-		// --- 遍历边界单元 ---
-		for (const auto& elementFacePair : fsiBoundaryElementFaces) {
-			int eleIdx = elementFacePair.first;
-			const auto& faces = elementFacePair.second;
-			int nFaces = faces.size();
-			if (nFaces <= 0) continue;
+            // --- 为该单元生成所有潜在的粒子 ---
+            Eigen::Matrix<Types::Real, 8, 3> xyzMatrix, velMatrix;
+            populateElementMatrices(eleIdx, xyzMatrix, velMatrix);
 
-			// --- 当前单元生成粒子的临时存储 ---
-			std::vector<std::array<Types::Real, 3>> tempCoords;
-			std::vector<std::array<Types::Real, 3>> tempVels;
-			std::vector<std::array<Types::Real, 3>> tempUnitCoords; // 存储原始单位坐标
+            // 对该单元的每个边界`面，调用粒子生成函数
+            for (int faceIdx : faces) {
+                generateVirtualParticlesForFace(
+                    faceIdx, 
+                    nLayers,
+                    virtualParticlesDist,  // 添加虚拟粒子距离参数
+                    xyzMatrix, 
+                    velMatrix,
+                    tempCoords, 
+                    tempVels, 
+                    tempUnitCoords
+                );
+            }
 
-			// --- 为该单元生成所有潜在的粒子 ---
-			Eigen::Matrix<Types::Real, 8, 3> xyzMatrix, velMatrix;
-			populateElementMatrices(eleIdx, xyzMatrix, velMatrix); // 移除了 try-catch
+            // --- 将 *所有* 生成的粒子添加到全局列表并更新映射表 ---
+            int numParticles = tempCoords.size(); // 获取实际生成的粒子数
+            size_t currentGlobalIndexStart = finalGlobalCoords.size();
+            auto& elementUnitData = map_eleIndex_virParticle_unit_data[eleIdx];
+            auto& elementGlobalIndices = map_eleIndex_virParticles_index[eleIdx];
+            elementUnitData.clear();
+            elementGlobalIndices.clear();
+            
+            // 预分配空间以提高效率
+            elementUnitData.reserve(numParticles);
+            elementGlobalIndices.reserve(numParticles);
 
-			// 对该单元的每个边界`面，调用（修改后的）粒子生成函数
-			for (int faceIdx : faces) {
-				generateVirtualParticlesForFace(faceIdx, nLayers, // <--- 传递 nLayers
-												xyzMatrix, velMatrix,
-												tempCoords, tempVels, tempUnitCoords); // 移除了 try-catch
-			}
+            for (int k = 0; k < numParticles; ++k) {
+                // 因为没有合并，所有粒子都是活动的，直接添加
+                size_t globalIndex = currentGlobalIndexStart + k; // 计算最终的全局索引
+                finalGlobalCoords.push_back(tempCoords[k]);
+                finalGlobalVels.push_back(tempVels[k]);
+                elementUnitData.push_back(tempUnitCoords[k]);
+                elementGlobalIndices.push_back(globalIndex); // 存储对应的全局索引
+            }
+        }
 
-			// --- 在单元的临时粒子内部执行合并操作 ---
-			// （合并逻辑本身不变，但现在处理的是从所有面中心法向生成的粒子）
-			int numParticles = tempCoords.size();
-			std::vector<bool> active(numParticles, true);
-
-			if (numParticles > 1 && mergeThresholdSq > 0) {
-				for (int i = 0; i < numParticles; ++i) {
-					if (!active[i]) continue;
-					for (int j = i + 1; j < numParticles; ++j) {
-						if (!active[j]) continue;
-						if (calculateDistSq(tempCoords[i], tempCoords[j]) < mergeThresholdSq) {
-							tempCoords[i][0] = 0.5 * (tempCoords[i][0] + tempCoords[j][0]);
-							tempCoords[i][1] = 0.5 * (tempCoords[i][1] + tempCoords[j][1]);
-							tempCoords[i][2] = 0.5 * (tempCoords[i][2] + tempCoords[j][2]);
-							tempVels[i][0] = 0.5 * (tempVels[i][0] + tempVels[j][0]);
-							tempVels[i][1] = 0.5 * (tempVels[i][1] + tempVels[j][1]);
-							tempVels[i][2] = 0.5 * (tempVels[i][2] + tempVels[j][2]);
-							active[j] = false;
-						}
-					}
-				}
-			}
-
-			// --- 将活动粒子添加到全局列表并更新映射表 ---
-			size_t currentGlobalIndexStart = finalGlobalCoords.size();
-			auto& elementUnitData = map_eleIndex_virParticle_unit_data[eleIdx];
-			auto& elementGlobalIndices = map_eleIndex_virParticles_index[eleIdx];
-			elementUnitData.clear();
-			elementGlobalIndices.clear();
-			int addedCount = 0;
-			for (int k = 0; k < numParticles; ++k) {
-				if (active[k]) {
-					finalGlobalCoords.push_back(tempCoords[k]);
-					finalGlobalVels.push_back(tempVels[k]);
-					elementUnitData.push_back(tempUnitCoords[k]);
-					elementGlobalIndices.push_back(currentGlobalIndexStart + addedCount);
-					addedCount++;
-				}
-			}
-		} // 结束边界单元的循环
-
-		// --- 使用最终合并后的列表更新主要的 fsi_share_data ---
-		fsi_share_data.FSI_virtualParticles_coordinates = std::move(finalGlobalCoords);
-		fsi_share_data.FSI_virtualParticles_velocity    = std::move(finalGlobalVels);
-	} // processInteractionElements 函数结束
+        // --- 使用最终列表更新主要的 fsi_share_data ---
+        fsi_share_data.FSI_virtualParticles_coordinates = std::move(finalGlobalCoords);
+        fsi_share_data.FSI_virtualParticles_velocity = std::move(finalGlobalVels);
+    } // <--- Adjusted this brace
+// ... existing code ...
 
 
 
