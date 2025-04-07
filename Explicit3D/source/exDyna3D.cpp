@@ -45,7 +45,7 @@ namespace EnSC {
 
 	void exDyna3D::run() {
 		init();
-		get_fsiSph_virtualParticles_and_vel(1, 0.005);
+		get_fsiSph_virtualParticles_and_vel(2, 0.25);
 		while (time < totalTime) {
 			update_minVertex_perMaterial_and_dt();
 			computeSate();
@@ -1144,41 +1144,26 @@ namespace EnSC {
 	}
 
 	void exDyna3D::get_fsiSph_virtualParticles_and_vel(int nLayers, Types::Real virtualParticlesDist) {
-
 		get_fsi_sph_Ele_face_index(); // 识别边界单元和面
 
-		if (fsiBoundaryElementFaces.empty()) { // 检查是否有 FSI 边界
+		if (fsiBoundaryElementFaces.empty()) {
 			std::cout << "警告：未找到 FSI 边界单元/面。" << std::endl;
-			// 如果未找到边界，确保全局列表被清除
 			fsi_share_data.FSI_virtualParticles_coordinates.clear();
 			fsi_share_data.FSI_virtualParticles_velocity.clear();
 			fsi_share_data.FSI_virtualParticles_nodeForce.clear();
 			map_eleIndex_virParticle_unit_data.clear();
 			map_eleIndex_virParticles_index.clear();
-			return; // 没有边界，无需生成粒子
+			return;
 		}
 
-		// 计算每条边上的粒子数
-		int particlesPerEdge = calculateParticlesPerEdge(virtualParticlesDist);
-		if (particlesPerEdge <= 0) { // 添加检查，防止无效值
-			particlesPerEdge = 1; // 至少为1
-			std::cerr << "警告：计算出的 particlesPerEdge <= 0。设置为 1。" << std::endl;
-		}
-		// 生成单位坐标 [-1, 1] 用于插值
-		std::vector<Types::Real> unitCoords = generateUnitCoordinates(particlesPerEdge);
+		// 调用修改后的 processInteractionElements，传递 nLayers 和 virtualParticlesDist
+		processInteractionElements(nLayers, virtualParticlesDist);
 
-		// 调用构建最终列表（包含合并逻辑）的修改后函数
-		processInteractionElements(nLayers, particlesPerEdge, unitCoords);
-
-		// 现在 fsi_share_data.FSI_virtualParticles_coordinates 和 _velocity
-		// 包含最终的、可能经过合并的粒子数据。
-
-		// 根据最终的粒子数调整力向量的大小
+		// resizeFsiSharedData 仍然需要，以调整力的向量大小
 		resizeFsiSharedData();
 
-		// 输出最终生成的粒子数量
 		std::cout << "生成了 " << fsi_share_data.FSI_virtualParticles_coordinates.size()
-				<< " 个最终虚拟粒子（可能经过合并）。" << std::endl;
+				  << " 个最终虚拟粒子（沿法线生成，可能经过合并）。" << std::endl;
 	}
 
 	void exDyna3D::populateElementMatrices(int eleIdx, Eigen::Matrix<Types::Real, 8, 3>& xyzMatrix,
@@ -1225,49 +1210,50 @@ namespace EnSC {
 	}
 
 	void exDyna3D::generateVirtualParticlesForFace(
-		int faceIdx, int nLayers, int particlesPerEdge,
-		const std::vector<Types::Real>& unitCoords,
-		const Eigen::Matrix<Types::Real, 8, 3>& xyzMatrix,  // 单元节点坐标
-		const Eigen::Matrix<Types::Real, 8, 3>& velMatrix,   // 单元节点速度
-		// --- 输出参数（当前单元的临时存储）---
+		int faceIdx, int nLayers,
+		const Eigen::Matrix<Types::Real, 8, 3>& xyzMatrix,
+		const Eigen::Matrix<Types::Real, 8, 3>& velMatrix,
+		// 输出参数 - 附加到这些向量
 		std::vector<std::array<Types::Real, 3>>& tempElementCoords,
 		std::vector<std::array<Types::Real, 3>>& tempElementVels,
 		std::vector<std::array<Types::Real, 3>>& tempElementUnitCoords
-		// 移除了 particleIndex，pointIdxInElement 可由向量大小隐式跟踪
 	) {
-
 		Element_HexN8 ele; // 用于访问形函数的临时单元对象
-		Types::Real step = (particlesPerEdge > 1) ? 2.0 / static_cast<Types::Real>(particlesPerEdge) : 2.0;
-		Types::Real normalOffsetBase = step / 2.0;
 		Eigen::Matrix<Types::Real, 1, 8> shapeFuncValue;
-		std::array<Types::Real, 3> unitPoint; // 用于单位坐标的局部变量
+		std::array<Types::Real, 3> unitPoint; // 存储 {xi, eta, zeta}
 
-		for (int i = 0; i < particlesPerEdge; ++i) {
-			for (int j = 0; j < particlesPerEdge; ++j) {
-				for (int k = 0; k < nLayers; ++k) {
-					Types::Real offset = normalOffsetBase + k * step;
+		// 检查 nLayers 是否有效
+		if (nLayers <= 0) {
+			return; // 不生成粒子
+		}
 
-					// 计算三维单位坐标 {xi, eta, zeta}
-					// 注意：移除了 try...catch，如果 setUnitPointForFace 抛出异常，程序将终止（除非上层捕获）
-					setUnitPointForFace(faceIdx, unitCoords[i], unitCoords[j], offset, unitPoint);
+		// 计算沿法线方向的单位坐标步长 (假设分布在单位距离 1.0 内)
+		Types::Real unitNormalStep = 1.0 / static_cast<Types::Real>(nLayers);
 
-					// 计算 unitPoint 处的形函数值
-					for (int n = 0; n < 8; ++n) {
-						shapeFuncValue(0, n) = ele.get_shapeFunctionValue(n, unitPoint);
-					}
+		// 只循环 nLayers 次，沿法线生成粒子
+		for (int k = 0; k < nLayers; ++k) {
+			// 计算当前层的法向偏移 (放置在层厚度的中心)
+			Types::Real offset = (static_cast<Types::Real>(k) + 0.5) * unitNormalStep;
 
-					// 插值计算物理坐标和速度
-					auto realCoordMat = shapeFuncValue * xyzMatrix;
-					auto velocityMat = shapeFuncValue * velMatrix;
-					std::array<Types::Real, 3> coord = {realCoordMat(0, 0), realCoordMat(0, 1), realCoordMat(0, 2)};
-					std::array<Types::Real, 3> vel = {velocityMat(0, 0), velocityMat(0, 1), velocityMat(0, 2)};
+			// 计算三维单位坐标 {xi, eta, zeta}，固定 u=0, v=0
+			// 如果 setUnitPointForFace 抛出异常，程序将终止（无 try-catch）
+			setUnitPointForFace(faceIdx, 0.0, 0.0, offset, unitPoint);
 
-					// --- 附加到临时单元向量 ---
-					tempElementCoords.push_back(coord);
-					tempElementVels.push_back(vel);
-					tempElementUnitCoords.push_back(unitPoint); // 存储其原始的单位坐标
-				}
+			// 计算 unitPoint 处的形函数值
+			for (int n = 0; n < 8; ++n) {
+				shapeFuncValue(0, n) = ele.get_shapeFunctionValue(n, unitPoint);
 			}
+
+			// 插值计算物理坐标和速度
+			auto realCoordMat = shapeFuncValue * xyzMatrix;
+			auto velocityMat = shapeFuncValue * velMatrix;
+			std::array<Types::Real, 3> coord = {realCoordMat(0, 0), realCoordMat(0, 1), realCoordMat(0, 2)};
+			std::array<Types::Real, 3> vel = {velocityMat(0, 0), velocityMat(0, 1), velocityMat(0, 2)};
+
+			// --- 附加到临时单元向量 ---
+			tempElementCoords.push_back(coord);
+			tempElementVels.push_back(vel);
+			tempElementUnitCoords.push_back(unitPoint); // 存储其单位坐标
 		}
 	}
 
@@ -1319,66 +1305,8 @@ namespace EnSC {
 		}
 	}
 
-	int exDyna3D::calculateParticlesPerEdge(Types::Real virtualParticlesDist) const {
-		// 基于用户定义的虚拟粒子分布距离，计算每条边应该有多少个虚拟粒子
-		// 首先获取一个典型单元的尺寸来计算合适的粒子数量
-		if (nEle == 0 || virtualParticlesDist <= 0) {
-			return 0; // 没有单元或无效参数时返回0
-		}
-
-		// 获取第一个单元来估计典型尺寸
-		const auto& ele = hexahedron_elements[0];
-		const auto& verticesIdx = ele.get_verticesIndex();
-		
-		if (verticesIdx.size() < 2) {
-			return 1; // 单元无效，返回默认值1
-		}
-
-		// 计算单元的一条边的长度
-		const auto& p1 = vertices[verticesIdx[0]];
-		const auto& p2 = vertices[verticesIdx[1]];
-		Types::Real dx = p1[0] - p2[0];
-		Types::Real dy = p1[1] - p2[1];
-		Types::Real dz = p1[2] - p2[2];
-		Types::Real edgeLength = std::sqrt(dx*dx + dy*dy + dz*dz);
-		
-		// 计算每条边上应该放置的粒子数目
-		// 如果 edgeLength = 0 或 virtualParticlesDist 过大，确保至少返回1
-		int particlesCount = std::max(1, static_cast<int>(edgeLength / virtualParticlesDist));
-		
-		return particlesCount;
-	}
-
-	std::vector<Types::Real> exDyna3D::generateUnitCoordinates(int particlesPerEdge) const {
-		// 在单位坐标系 [-1, 1] 上生成均匀分布的坐标点
-		std::vector<Types::Real> unitCoords;
-		
-		if (particlesPerEdge <= 0) {
-			return unitCoords; // 返回空向量
-		}
-		
-		// 分配空间避免多次重新分配
-		unitCoords.reserve(particlesPerEdge);
-		
-		if (particlesPerEdge == 1) {
-			// 只有一个粒子时，放在中心
-			unitCoords.push_back(0.0);
-		} else {
-			// 多个粒子时，均匀分布
-			Types::Real step = 2.0 / static_cast<Types::Real>(particlesPerEdge - 1);
-			for (int i = 0; i < particlesPerEdge; ++i) {
-				Types::Real coord = -1.0 + i * step;
-				unitCoords.push_back(coord);
-			}
-		}
-		
-		return unitCoords;
-	}
-
-	void exDyna3D::processInteractionElements(int nLayers, int particlesPerEdge,
-		const std::vector<Types::Real>& unitCoords) {
-
-		// 在函数开始处定义 lambda 表达式，替代原来的 distSq 函数
+	void exDyna3D::processInteractionElements(int nLayers, Types::Real virtualParticlesDist) {
+		// 定义 lambda 表达式，替代原来的 distSq 函数
 		auto calculateDistSq = [](const std::array<Types::Real, 3>& p1, const std::array<Types::Real, 3>& p2) -> Types::Real {
 			Types::Real dx = p1[0] - p2[0];
 			Types::Real dy = p1[1] - p2[1];
@@ -1394,30 +1322,12 @@ namespace EnSC {
 		map_eleIndex_virParticle_unit_data.clear();
 		map_eleIndex_virParticles_index.clear();
 
-
 		// --- 定义合并参数 ---
-		const Types::Real mergeFactor = 0.5; // 如果距离 < 0.5 * virtualParticlesDist 则合并
-		Types::Real effectiveVirtualParticlesDist = 0.1; // 占位符 - 需要正确计算或传递
-		if (!fsiBoundaryElementFaces.empty()) {
-			int firstEleIdx = fsiBoundaryElementFaces[0].first;
-			const auto& ele = hexahedron_elements[firstEleIdx];
-			const auto& vIdx = ele.get_verticesIndex();
-			if (vIdx.size() >= 2 && particlesPerEdge > 0) {
-				const auto& p1 = vertices[vIdx[0]];
-				const auto& p2 = vertices[vIdx[1]];
-				Types::Real dx = p1[0] - p2[0]; Types::Real dy = p1[1] - p2[1]; Types::Real dz = p1[2] - p2[2];
-				Types::Real edgeLength = std::sqrt(dx * dx + dy * dy + dz * dz);
-				effectiveVirtualParticlesDist = edgeLength / static_cast<Types::Real>(particlesPerEdge);
-			} else if (particlesPerEdge == 0) {
-				std::cerr << "警告: particlesPerEdge 为零，无法准确计算 effectiveVirtualParticlesDist。" << std::endl;
-			}
-		} else {
-			std::cerr << "警告: fsiBoundaryElementFaces 为空，无法计算 effectiveVirtualParticlesDist。" << std::endl;
-		}
-		const Types::Real mergeThresholdSq = (effectiveVirtualParticlesDist > 1e-9) ?
-											std::pow(mergeFactor * effectiveVirtualParticlesDist, 2) :
-											-1.0; // 设置为负数以禁用合并
-
+		const Types::Real mergeFactor = 0.05; // 合并因子
+		// 使用 virtualParticlesDist 计算合并阈值的平方
+		const Types::Real mergeThresholdSq = (virtualParticlesDist > 1e-9) ?
+											std::pow(mergeFactor * virtualParticlesDist, 2) :
+											-1.0; // 如果 virtualParticlesDist 无效，则禁用合并
 
 		// --- 遍历边界单元 ---
 		for (const auto& elementFacePair : fsiBoundaryElementFaces) {
@@ -1435,33 +1345,31 @@ namespace EnSC {
 			Eigen::Matrix<Types::Real, 8, 3> xyzMatrix, velMatrix;
 			populateElementMatrices(eleIdx, xyzMatrix, velMatrix); // 移除了 try-catch
 
+			// 对该单元的每个边界`面，调用（修改后的）粒子生成函数
 			for (int faceIdx : faces) {
-				generateVirtualParticlesForFace(faceIdx, nLayers, particlesPerEdge, unitCoords,
+				generateVirtualParticlesForFace(faceIdx, nLayers, // <--- 传递 nLayers
 												xyzMatrix, velMatrix,
 												tempCoords, tempVels, tempUnitCoords); // 移除了 try-catch
 			}
 
 			// --- 在单元的临时粒子内部执行合并操作 ---
+			// （合并逻辑本身不变，但现在处理的是从所有面中心法向生成的粒子）
 			int numParticles = tempCoords.size();
-			std::vector<bool> active(numParticles, true); // 跟踪活动的粒子
+			std::vector<bool> active(numParticles, true);
 
-			if (numParticles > 1 && mergeThresholdSq > 0) { // 仅当粒子数大于1且阈值有效时才合并
+			if (numParticles > 1 && mergeThresholdSq > 0) {
 				for (int i = 0; i < numParticles; ++i) {
 					if (!active[i]) continue;
-
 					for (int j = i + 1; j < numParticles; ++j) {
 						if (!active[j]) continue;
-
-						// 使用上面定义的 lambda 表达式
 						if (calculateDistSq(tempCoords[i], tempCoords[j]) < mergeThresholdSq) {
-							// 将粒子 j 合并到粒子 i
 							tempCoords[i][0] = 0.5 * (tempCoords[i][0] + tempCoords[j][0]);
 							tempCoords[i][1] = 0.5 * (tempCoords[i][1] + tempCoords[j][1]);
 							tempCoords[i][2] = 0.5 * (tempCoords[i][2] + tempCoords[j][2]);
 							tempVels[i][0] = 0.5 * (tempVels[i][0] + tempVels[j][0]);
 							tempVels[i][1] = 0.5 * (tempVels[i][1] + tempVels[j][1]);
 							tempVels[i][2] = 0.5 * (tempVels[i][2] + tempVels[j][2]);
-							active[j] = false; // 将粒子 j 标记为非活动
+							active[j] = false;
 						}
 					}
 				}
@@ -1471,27 +1379,25 @@ namespace EnSC {
 			size_t currentGlobalIndexStart = finalGlobalCoords.size();
 			auto& elementUnitData = map_eleIndex_virParticle_unit_data[eleIdx];
 			auto& elementGlobalIndices = map_eleIndex_virParticles_index[eleIdx];
-			elementUnitData.clear(); // 确保从空状态开始填充
+			elementUnitData.clear();
 			elementGlobalIndices.clear();
-
-			int addedCount = 0; // 记录该单元实际添加的粒子数
+			int addedCount = 0;
 			for (int k = 0; k < numParticles; ++k) {
 				if (active[k]) {
 					finalGlobalCoords.push_back(tempCoords[k]);
 					finalGlobalVels.push_back(tempVels[k]);
-					elementUnitData.push_back(tempUnitCoords[k]); // 存储代表性的单位坐标
+					elementUnitData.push_back(tempUnitCoords[k]);
 					elementGlobalIndices.push_back(currentGlobalIndexStart + addedCount);
 					addedCount++;
 				}
 			}
-
 		} // 结束边界单元的循环
-
 
 		// --- 使用最终合并后的列表更新主要的 fsi_share_data ---
 		fsi_share_data.FSI_virtualParticles_coordinates = std::move(finalGlobalCoords);
 		fsi_share_data.FSI_virtualParticles_velocity    = std::move(finalGlobalVels);
-
 	} // processInteractionElements 函数结束
+
+
 
 }

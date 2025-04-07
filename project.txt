@@ -1,5 +1,5 @@
 #inp file name eg. t1.inp
-test.inp
+test_single.inp
 
 #Stiffiness Hourglass Control parameter
 0.013

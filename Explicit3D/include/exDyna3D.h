@@ -10,7 +10,6 @@
 #include <numeric>      // 包含 std::iota (如果需要 RCM 优化)
 #include <algorithm>    // 包含 std::sort 等 (如果需要 RCM 优化)
 #include <set>          // 包含 std::set (如果需要 RCM 或 FSI 边界处理)
-#include <condition_variable> // (似乎未使用，可清理)
 #include <utility>      // 包含 std::pair, std::move
 
 // --- Eigen 头文件 (通过 types.h 被引入) ---
@@ -48,11 +47,11 @@ namespace EnSC {
 	// struct CellDataHex;                     // 这个定义可能并不需要前向声明
 
 	// --- 外部节点力结构体 (似乎未使用，可能需清理) ---
-	struct ExternalNodeForce {
-		std::vector<Types::Vertex_index> external_node_force_nodeID; // 节点ID
-		std::vector<int> external_node_force_direction;         // 作用方向
-		std::vector<Types::Real> external_node_force_value;         // 力的大小
-	};
+	// struct ExternalNodeForce {
+	// 	std::vector<Types::Vertex_index> external_node_force_nodeID; // 节点ID
+	// 	std::vector<int> external_node_force_direction;         // 作用方向
+	// 	std::vector<Types::Real> external_node_force_value;         // 力的大小
+	// };
 
 	// --- 主求解器类 ---
 	class exDyna3D {
@@ -107,11 +106,18 @@ namespace EnSC {
 		// --- FSI 相关方法 ---
 		void get_fsi_sph_Ele_face_index();          // 获取 FSI 边界单元面索引
 		void get_fsiSph_virtualParticles_and_vel(int nLayers, Types::Real virtualParticlesDist); // 生成 FSI 虚拟粒子
-		int calculateParticlesPerEdge(Types::Real virtualParticlesDist) const; // 计算每边粒子数
-		std::vector<Types::Real> generateUnitCoordinates(int particlesPerEdge) const; // 生成单位坐标
-		void processInteractionElements(int nLayers, int particlesPerEdge, const std::vector<Types::Real>& unitCoords); // 处理交互单元及粒子
+		void processInteractionElements(int nLayers, Types::Real virtualParticlesDist); // 处理交互单元及粒子（沿法线生成，含合并）
 		void populateElementMatrices(int eleIdx, Eigen::Matrix<Types::Real, 8, 3>& xyzMatrix, Eigen::Matrix<Types::Real, 8, 3>& velMatrix) const; // 获取单元节点坐标和速度
-		void generateVirtualParticlesForFace(int faceIdx, int nLayers, int particlesPerEdge, const std::vector<Types::Real>& unitCoords, const Eigen::Matrix<Types::Real, 8, 3>& xyzMatrix, const Eigen::Matrix<Types::Real, 8, 3>& velMatrix, std::vector<std::array<Types::Real, 3>>& tempElementCoords, std::vector<std::array<Types::Real, 3>>& tempElementVels, std::vector<std::array<Types::Real, 3>>& tempElementUnitCoords); // 为各个面生成虚拟粒子
+		// 新声明示例 (假设它仍在类中声明)
+void generateVirtualParticlesForFace(
+    int faceIdx, int nLayers,
+    const Eigen::Matrix<Types::Real, 8, 3>& xyzMatrix,
+    const Eigen::Matrix<Types::Real, 8, 3>& velMatrix,
+    // 输出参数 - 附加到这些向量
+    std::vector<std::array<Types::Real, 3>>& tempElementCoords,
+    std::vector<std::array<Types::Real, 3>>& tempElementVels,
+    std::vector<std::array<Types::Real, 3>>& tempElementUnitCoords
+); // 为单个面生成粒子（沿法线）
 		void setUnitPointForFace(int faceIdx, Types::Real x, Types::Real y, Types::Real offset, std::array<Types::Real, 3>& unitPoint) const; // 设置虚拟粒子单位坐标
 		void resizeFsiSharedData();                 // 调整 FSI 共享数据大小
 
