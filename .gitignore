@@ -1,0 +1,5 @@
+# 忽略项目中任何位置的 build 文件夹及其内容
+build/
+
+# 忽略 IDE 配置文件（如 VS Code）
+.vscode/
