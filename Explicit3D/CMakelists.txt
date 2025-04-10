@@ -3,15 +3,18 @@
 
 # --- 查找依赖项 ---
 
-# 查找 OpenMP
-find_package(OpenMP QUIET)
-if(OpenMP_CXX_FOUND)
-    message(STATUS "找到 OpenMP 支持 (版本: ${OpenMP_CXX_VERSION})")
-    set(PROJECT_USE_OPENMP TRUE)
-else()
-    message(WARNING "未找到 OpenMP 支持。如果需要，请确保已安装并配置好 OpenMP 运行时，或者检查 Clang 安装是否完整。多线程加速将不可用。")
-    set(PROJECT_USE_OPENMP FALSE)
-endif()
+# 查找 OpenMP (临时禁用)
+# find_package(OpenMP QUIET)
+# if(OpenMP_CXX_FOUND)
+#     message(STATUS "找到 OpenMP 支持 (版本: ${OpenMP_CXX_VERSION})")
+#     set(PROJECT_USE_OPENMP TRUE)
+# else()
+#     message(WARNING "未找到 OpenMP 支持。如果需要，请确保已安装并配置好 OpenMP 运行时，或者检查 Clang 安装是否完整。多线程加速将不可用。")
+#     set(PROJECT_USE_OPENMP FALSE)
+# endif()
+# 临时禁用 OpenMP 以便测试能够成功构建
+set(PROJECT_USE_OPENMP FALSE)
+message(STATUS "已临时禁用 OpenMP 支持，以便测试能够成功构建")
 
 # 查找 VTK
 find_package(VTK REQUIRED COMPONENTS
@@ -84,8 +87,10 @@ if(PROJECT_USE_OPENMP)
     message(STATUS "已为目标 Explicit3D 链接 OpenMP。")
 endif()
 
-# 添加对apply_fsiSph_nodeForce函数的公共访问权限
-target_compile_definitions(Explicit3D PUBLIC TESTING_ENABLED)
+# 添加测试相关的定义和编译选项
+target_compile_definitions(Explicit3D PUBLIC TESTING_ENABLED NOMINMAX)
+# 禁用 OpenMP（针对测试）
+target_compile_definitions(Explicit3D PUBLIC DISABLE_OPENMP)
 
 # 启用测试
 if(PROJECT_USE_GTEST)

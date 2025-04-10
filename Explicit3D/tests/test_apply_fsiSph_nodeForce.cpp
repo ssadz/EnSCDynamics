@@ -106,5 +106,41 @@ TEST_F(ApplyFsiSphNodeForceTest, HandlesEmptyVirtualParticles) {
     }
 }
 
+// 测试中心粒子受到单位力沿着x方向的情况
+TEST_F(ApplyFsiSphNodeForceTest, AppliesUnitForceInXDirection) {
+    // 重置加速度向量
+    exdyna.solution_a.setZero();
+    
+    // 修改虚拟粒子力为沿x方向的单位力
+    exdyna.fsi_share_data.FSI_virtualParticles_nodeForce[0] = {1.0, 0.0, 0.0};  // 只在x方向有单位力
+    
+    // 调用被测试的函数
+    exdyna.apply_fsiSph_nodeForce();
+    
+    // 打印所有节点的x方向力，用于调试
+    std::cout << "节点的x方向力分布：" << std::endl;
+    for (int i = 0; i < 8; i++) {
+        int dof0 = 3 * i;
+        std::cout << "节点 " << i << ": " << exdyna.solution_a[dof0] << std::endl;
+    }
+    
+    // 验证力已正确应用到节点
+    for (int i = 0; i < 8; i++) {
+        int dof0 = 3 * i;
+        // 检查x方向应该有力
+        EXPECT_GT(exdyna.solution_a[dof0], 0.0) << "X方向力应该被应用到节点 " << i;
+        // y和z方向应该没有力
+        EXPECT_DOUBLE_EQ(exdyna.solution_a[dof0 + 1], 0.0) << "Y方向不应该有力在节点 " << i;
+        EXPECT_DOUBLE_EQ(exdyna.solution_a[dof0 + 2], 0.0) << "Z方向不应该有力在节点 " << i;
+    }
+    
+    // 验证力的总和等于输入的力（守恒）
+    Types::Real totalForceX = 0.0;
+    for (int i = 0; i < 8; i++) {
+        totalForceX += exdyna.solution_a[3 * i];
+    }
+    EXPECT_NEAR(totalForceX, 1.0, 1e-10) << "X方向的总力应该等于输入的单位力";
+}
+
 }  // namespace testing
 }  // namespace EnSC 
