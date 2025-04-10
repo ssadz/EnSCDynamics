@@ -25,6 +25,22 @@ message(STATUS "成功找到所需的 VTK 组件。将使用 VTK 提供的导入
 find_package(Eigen3 REQUIRED NO_MODULE)
 message(STATUS "成功找到 Eigen3 (版本: ${Eigen3_VERSION})。将使用 Eigen3 提供的导入目标 (Eigen3::Eigen)。")
 
+# 使用 FetchContent 自动下载 GoogleTest
+include(FetchContent)
+FetchContent_Declare(
+    googletest
+    GIT_REPOSITORY https://github.com/google/googletest.git
+    GIT_TAG release-1.12.1
+)
+# 配置 GoogleTest 选项
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
+set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+# 获取 GoogleTest
+FetchContent_MakeAvailable(googletest)
+message(STATUS "已通过 FetchContent 配置 GoogleTest")
+set(PROJECT_USE_GTEST TRUE)
+
 # 收集源文件
 file(GLOB EXPLICIT3D_SOURCES "source/*.cpp")
 file(GLOB EXPLICIT3D_HEADERS "include/*.h")
@@ -66,6 +82,19 @@ target_link_libraries(Explicit3D PUBLIC
 if(PROJECT_USE_OPENMP)
     target_link_libraries(Explicit3D PUBLIC OpenMP::OpenMP_CXX)
     message(STATUS "已为目标 Explicit3D 链接 OpenMP。")
+endif()
+
+# 添加对apply_fsiSph_nodeForce函数的公共访问权限
+target_compile_definitions(Explicit3D PUBLIC TESTING_ENABLED)
+
+# 启用测试
+if(PROJECT_USE_GTEST)
+    # 启用 CTest
+    enable_testing()
+    
+    # 添加测试子目录
+    add_subdirectory(tests)
+    message(STATUS "已启用 GoogleTest 测试。")
 endif()
 
 # 导出变量到父 CMake 作用域
