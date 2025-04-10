@@ -108,6 +108,7 @@ namespace EnSC {
 		void get_fsiSph_virtualParticles_and_vel(int nLayers, Types::Real virtualParticlesDist); // 生成 FSI 虚拟粒子
 		void processInteractionElements(int nLayers, Types::Real virtualParticlesDist); // 处理交互单元及粒子（沿法线生成，含合并）
 		void populateElementMatrices(int eleIdx, Eigen::Matrix<Types::Real, 8, 3>& xyzMatrix, Eigen::Matrix<Types::Real, 8, 3>& velMatrix) const; // 获取单元节点坐标和速度
+		void apply_fsiSph_nodeForce();//把虚粒子的力应用到单元上
 		// 新声明示例 (假设它仍在类中声明)
 
 		void setUnitPointForFace(int faceIdx, Types::Real x, Types::Real y, Types::Real offset, std::array<Types::Real, 3>& unitPoint) const; // 设置虚拟粒子单位坐标

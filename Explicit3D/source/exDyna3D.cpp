@@ -45,12 +45,11 @@ namespace EnSC {
 
 	void exDyna3D::run() {
 		init();
-		get_fsiSph_virtualParticles_and_vel(2, 1.0/10.0);
+		get_fsiSph_virtualParticles_and_vel(1, 1.0/10.0);
 		while (time < totalTime) {
 			update_minVertex_perMaterial_and_dt();
 			computeSate();
 		}
-
 	}
 
 	// 在 exDyna3D.cpp 中
@@ -168,7 +167,7 @@ namespace EnSC {
 			// but following the original logic here:
 			time_output += time_interval;
 
-			// Use a static counter for consistent file numbering across calls
+			// Use a static counter for consistent file Realing across calls
 			static int count = 0;
 
 			// Create DataOut object
@@ -646,6 +645,7 @@ namespace EnSC {
 	void exDyna3D::computeSate() {
 		time += dt_i_1;
 		apply_boundary_condition_vec();
+		apply_fsiSph_nodeForce();
 		add_inForce_to_rhs();
 		apply_external_node_force();
 		apply_boundary_condition_a();
@@ -655,7 +655,6 @@ namespace EnSC {
 		update_velocity();
 		update_displacement();
 		move_mesh();
-
 	}
 
 	void exDyna3D::apply_external_node_force() {
@@ -1361,7 +1360,7 @@ namespace EnSC {
 		}
 	}
 
-	// ... existing code ...
+	
     void exDyna3D::processInteractionElements(int nLayers, Types::Real virtualParticlesDist) {
         // --- 准备最终的全局列表 ---
         std::vector<std::array<Types::Real, 3>> finalGlobalCoords;
@@ -1426,9 +1425,63 @@ namespace EnSC {
         // --- 使用最终列表更新主要的 fsi_share_data ---
         fsi_share_data.FSI_virtualParticles_coordinates = std::move(finalGlobalCoords);
         fsi_share_data.FSI_virtualParticles_velocity = std::move(finalGlobalVels);
-    } // <--- Adjusted this brace
-// ... existing code ...
+    } 
 
+	void exDyna3D::apply_fsiSph_nodeForce() 
+	{
+		// 遍历所有包含虚拟粒子的单元
+		for (auto elementIter = map_eleIndex_virParticle_unit_data.cbegin();
+			 elementIter != map_eleIndex_virParticle_unit_data.cend(); 
+			 ++elementIter)
+		{
+			// 获取当前单元索引
+			const unsigned int elementIndex = elementIter->first;
+			
+			// 获取单元信息
+			auto& element = hexahedron_elements[elementIndex];
+			const auto& nodeIndices = element.get_verticesIndex();
+
+			// 获取该单元的虚拟粒子信息
+			const auto& virtualParticleUnitCoords = elementIter->second;
+			const auto& virtualParticleIndices = map_eleIndex_virParticles_index[elementIndex];
+			auto virtualParticleIter = virtualParticleIndices.cbegin();
+
+			// 初始化形函数值和节点力矩阵
+			Eigen::Matrix<Types::Real, 1, 8> shapeFunctionValues;
+			Eigen::Matrix<Types::Real, 1, 8> nodeForceX = Eigen::Matrix<Types::Real, 1, 8>::Zero();
+			Eigen::Matrix<Types::Real, 1, 8> nodeForceY = Eigen::Matrix<Types::Real, 1, 8>::Zero();
+			Eigen::Matrix<Types::Real, 1, 8> nodeForceZ = Eigen::Matrix<Types::Real, 1, 8>::Zero();
+
+			// 遍历该单元的所有虚拟粒子
+			for (auto unitCoordIter = virtualParticleUnitCoords.cbegin();
+				 unitCoordIter != virtualParticleUnitCoords.cend(); 
+				 ++unitCoordIter)
+			{
+				// 计算形函数值
+				for (int i = 0; i < 8; ++i)
+				{
+					shapeFunctionValues[i] = element.get_shapeFunctionValue(i, *unitCoordIter);
+				}
+
+				// 将虚拟粒子的力分配到单元节点
+				const auto& virtualParticleForce = fsi_share_data.FSI_virtualParticles_nodeForce[*virtualParticleIter];
+				++virtualParticleIter;
+
+				nodeForceX += virtualParticleForce[0] * shapeFunctionValues;
+				nodeForceY += virtualParticleForce[1] * shapeFunctionValues;
+				nodeForceZ += virtualParticleForce[2] * shapeFunctionValues;
+			}
+
+			// 将虚拟粒子的节点力添加到系统右端项
+			for (int i = 0; i < 8; ++i)
+			{
+				const unsigned int dof0 = 3 * nodeIndices[i];
+				solution_a[dof0]     += nodeForceX[i];
+				solution_a[dof0 + 1] += nodeForceY[i];
+				solution_a[dof0 + 2] += nodeForceZ[i];
+			}
+		}
+	}//apply_fsiSph_nodeForce() 结束
 
 
 }
