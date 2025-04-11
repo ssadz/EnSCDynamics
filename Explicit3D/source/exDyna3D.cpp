@@ -298,102 +298,139 @@ namespace EnSC {
 	}
 
 	void exDyna3D::apply_boundary_condition_vec() {
-		// Apply velocity boundary conditions
-		if (!boundary_vel_node.empty()) {
-			// Parallelize the outer loop over boundary conditions
-#pragma omp parallel for
-			for (std::size_t iter_idx = 0; iter_idx < boundary_vel_node.size(); ++iter_idx) {
-				const auto& iter = boundary_vel_node[iter_idx];
-				const auto& node_ids = iter.first;
-				const auto& index_range = iter.second.first;
-				const auto value = iter.second.second;
+		// 使用 OpenMP tasks 并行施加边界条件，结合范围迭***循环创建任务
+		#pragma omp parallel // 创建并行区域
+		{
+			#pragma omp single // 仅由单个线程创建以下任务
+			{
+				// --- 应用速度边界条件 --- 
+				if (!boundary_vel_node.empty()) {
+					// 使用范围迭***循环遍历速度边界条件定义
+					for (const auto& iter : boundary_vel_node) {
+						#pragma omp task // 为每个边界条件定义创建一个任务
+						{
+							// iter 直接是 boundary_vel_node 中的元素 (std::pair)
+							const auto& node_ids = iter.first;
+							const auto& index_range = iter.second.first;
+							const auto value = iter.second.second;
 
-				// Loop over node IDs
-				for (const auto& node_id : node_ids) {
-					const auto dof0 = node_id * 3;
-					// Loop over degrees of freedom
-					for (auto i = index_range[0]; i <= index_range[1]; ++i) {
-						solution_v[dof0 + i] = value;
+							// 遍历该边界条件包含的节点
+							for (const auto& node_id : node_ids) {
+								const auto dof0 = node_id * 3;
+								// 遍历指定的自由度
+								for (auto i = index_range[0]; i <= index_range[1]; ++i) {
+									// 设置速度值
+									// 注意：假设不同的边界条件定义不会竞争写入同一个 solution_v 条目
+									solution_v[dof0 + i] = value;
+								}
+							}
+						} // 任务结束
 					}
 				}
-			}
-		}
 
-		// Apply fixed boundary conditions
-		if (!boundary_spc_node.empty()) {
-			// Parallelize the outer loop over boundary conditions
-#pragma omp parallel for
-			for (std::size_t iter_idx = 0; iter_idx < boundary_spc_node.size(); ++iter_idx) {
-				const auto& iter = boundary_spc_node[iter_idx];
-				const auto& node_ids = iter.first;
-				const auto& index_range = std::array<std::size_t, 2>{ iter.second[0], iter.second[1] };
-				const auto condition = iter.second[2];
+				// --- 应用固定边界条件 --- 
+				if (!boundary_spc_node.empty()) {
+					// 使用范围迭***循环遍历固定边界条件定义
+					for (const auto& iter : boundary_spc_node) {
+						#pragma omp task // 为每个边界条件定义创建一个任务
+						{
+							// iter 直接是 boundary_spc_node 中的元素 (std::pair)
+							const auto& node_ids = iter.first;
+							// 注意 iter.second 是 std::array<size_t, 3>
+							const auto index_start = iter.second[0];
+							const auto index_end = iter.second[1];
+							const auto condition = iter.second[2];
 
-				// Loop over node IDs
-				for (const auto& node_id : node_ids) {
-					const auto dof0 = node_id * 3;
-					// Loop over degrees of freedom
-					for (auto i = index_range[0]; i <= index_range[1]; ++i) {
-						if (condition == 1) {
-							solution_v[dof0 + i] = 0.0;
-						}
+							// 遍历该边界条件包含的节点
+							for (const auto& node_id : node_ids) {
+								const auto dof0 = node_id * 3;
+								// 遍历指定的自由度
+								for (auto i = index_start; i <= index_end; ++i) {
+									if (condition == 1) { // 如果是固定条件
+										// 设置速度为 0
+										// 注意：假设不同的边界条件定义不会竞争写入同一个 solution_v 条目
+										solution_v[dof0 + i] = 0.0;
+									}
+								}
+							}
+						} // 任务结束
 					}
 				}
-			}
-		}
+			} // single 结束
+		} // parallel 结束
 	}
 
 	void exDyna3D::apply_boundary_condition_a() {
 		solution_rf.setZero();
 
-		// Apply velocity boundary conditions
-		if (!boundary_vel_node.empty()) {
-			// Parallelize the outer loop over boundary conditions
-#pragma omp parallel for
-			for (std::size_t iter_idx = 0; iter_idx < boundary_vel_node.size(); ++iter_idx) {
-				const auto& iter = boundary_vel_node[iter_idx];
-				const auto& node_ids = iter.first;
-				const auto& index_range = iter.second.first;
+		// 使用 OpenMP tasks 并行施加加速度相关的边界条件，结合范围迭***循环创建任务
+		#pragma omp parallel // 创建并行区域
+		{
+			#pragma omp single // 仅由单个线程创建以下任务
+			{
+				// --- 处理速度边界条件（将对应自由度加速度设为0）---
+				if (!boundary_vel_node.empty()) {
+					// 使用范围迭***循环遍历速度边界条件定义
+					for (const auto& iter : boundary_vel_node) {
+						#pragma omp task // 为每个边界条件定义创建一个任务
+						{
+							// iter 直接是 boundary_vel_node 中的元素 (std::pair)
+							const auto& node_ids = iter.first;
+							const auto& index_range = iter.second.first;
 
-				// Loop over node IDs
-				for (const auto& node_id : node_ids) {
-					const auto dof0 = node_id * 3;
-					// Loop over degrees of freedom
-					for (auto i = index_range[0]; i <= index_range[1]; ++i) {
-						solution_a[dof0 + i] = 0.0;
-					}
-				}
-			}
-		}
-
-		// Apply fixed boundary conditions
-		if (!boundary_spc_node.empty()) {
-			// Parallelize the outer loop over boundary conditions
-#pragma omp parallel for
-			for (std::size_t iter_idx = 0; iter_idx < boundary_spc_node.size(); ++iter_idx) {
-				const auto& iter = boundary_spc_node[iter_idx];
-				const auto& node_ids = iter.first;
-				const auto index_start = iter.second[0];
-				const auto index_end = iter.second[1];
-				const auto condition = iter.second[2];
-
-				// Loop over node IDs
-				for (const auto& node_id : node_ids) {
-					const auto dof0 = node_id * 3;
-					// Loop over degrees of freedom
-					for (auto i = index_start; i <= index_end; ++i) {
-						if (condition == 1) {
-							auto idx = dof0 + i;
-							double sol_a = solution_a[idx];
-							if (sol_a != 0.0) {
-								solution_rf[idx] = -sol_a;
-								solution_a[idx] = 0.0;
+							// 遍历该边界条件包含的节点
+							for (const auto& node_id : node_ids) {
+								const auto dof0 = node_id * 3;
+								// 遍历指定的自由度
+								for (auto i = index_range[0]; i <= index_range[1]; ++i) {
+									// 将加速度设为0
+									// 注意：假设不同的边界条件定义不会竞争写入同一个 solution_a 条目
+									solution_a[dof0 + i] = 0.0;
+								}
 							}
-						}
+						} // 任务结束
 					}
 				}
-			}
-		}
+
+				// --- 处理固定边界条件（计算反力，并将加速度设为0）---
+				if (!boundary_spc_node.empty()) {
+					// 使用范围迭***循环遍历固定边界条件定义
+					for (const auto& iter : boundary_spc_node) {
+						#pragma omp task // 为每个边界条件定义创建一个任务
+						{
+							// iter 直接是 boundary_spc_node 中的元素 (std::pair)
+							const auto& node_ids = iter.first;
+							// 注意 iter.second 是 std::array<size_t, 3>
+							const auto index_start = iter.second[0];
+							const auto index_end = iter.second[1];
+							const auto condition = iter.second[2];
+
+							// 遍历该边界条件包含的节点
+							for (const auto& node_id : node_ids) {
+								const auto dof0 = node_id * 3;
+								// 遍历指定的自由度
+								for (auto i = index_start; i <= index_end; ++i) {
+									if (condition == 1) { // 如果是固定条件
+										auto idx = dof0 + i;
+										// 读取当前加速度值
+										double sol_a = solution_a[idx]; 
+										if (sol_a != 0.0) {
+											// 使用 critical 段保护对共享变量 solution_rf 和 solution_a 的写入
+											// 防止不同任务同时写入同一内存位置导致的数据竞争
+											#pragma omp critical
+											{
+												solution_rf[idx] = -sol_a; // 计算反力
+												solution_a[idx] = 0.0;    // 将加速度设为0
+											}
+										}
+									}
+								}
+							}
+						} // 任务结束
+					}
+				}
+			} // single 结束
+		} // parallel 结束
 	}
 
 	void exDyna3D::compute_invMassMatrix() {
