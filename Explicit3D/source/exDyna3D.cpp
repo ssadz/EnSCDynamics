@@ -45,7 +45,7 @@ namespace EnSC {
 
 	void exDyna3D::run() {
 		init();
-		get_fsiSph_virtualParticles_and_vel(1, 1.0/10.0);
+		//get_fsiSph_virtualParticles_and_vel(1, 1.0/10.0);
 		while (time < totalTime) {
 			update_minVertex_perMaterial_and_dt();
 			computeSate();
@@ -682,7 +682,7 @@ namespace EnSC {
 	void exDyna3D::computeSate() {
 		time += dt_i_1;
 		apply_boundary_condition_vec();
-		apply_fsiSph_nodeForce();
+		//apply_fsiSph_nodeForce();
 		add_inForce_to_rhs();
 		apply_external_node_force();
 		apply_boundary_condition_a();
@@ -692,7 +692,7 @@ namespace EnSC {
 		update_velocity();
 		update_displacement();
 		move_mesh();
-		update_virParticles_coor_vel();
+		//update_virParticles_coor_vel();
 	}
 
 	void exDyna3D::apply_external_node_force() {
