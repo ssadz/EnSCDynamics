@@ -655,6 +655,7 @@ namespace EnSC {
 		update_velocity();
 		update_displacement();
 		move_mesh();
+		update_virParticles_coor_vel();
 	}
 
 	void exDyna3D::apply_external_node_force() {
@@ -1501,22 +1502,11 @@ namespace EnSC {
                         Eigen::Matrix<Types::Real, 1, 3> particleCoordinates;
                         Eigen::Matrix<Types::Real, 1, 3> particleVelocities;
                         
-                        // 获取单元信息
+                        // 使用已有函数填充节点坐标和速度矩阵，避免代码重复
+                        populateElementMatrices(elementIndex, nodeCoordinates, nodeVelocities);
+                        
+                        // 获取单元实例用于计算形函数值
                         auto& element = hexahedron_elements[elementIndex];
-                        const auto& nodeIndices = element.get_verticesIndex();
-                        for (int j = 0; j < 8; ++j)
-                        {
-                            // 获取节点速度
-                            unsigned int dof0 = 3 * nodeIndices[j];
-                            nodeVelocities(j, 0) = solution_v[dof0];
-                            nodeVelocities(j, 1) = solution_v[dof0 + 1];
-                            nodeVelocities(j, 2) = solution_v[dof0 + 2];
-                            // 获取节点坐标
-                            const Types::Point<3>& nodePoint = vertices[nodeIndices[j]];
-                            nodeCoordinates(j, 0) = nodePoint[0];
-                            nodeCoordinates(j, 1) = nodePoint[1];
-                            nodeCoordinates(j, 2) = nodePoint[2];
-                        }
 
                         // 获取该单元的虚拟粒子信息
                         const auto& virtualParticleUnitCoords = elementPair.second;
