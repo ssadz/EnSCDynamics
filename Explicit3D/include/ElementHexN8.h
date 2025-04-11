@@ -62,6 +62,24 @@ namespace EnSC
 		std::array<Types::Real, 3> get_shapeFunctionDerivatives(int pINode, const std::array<Types::Real, 3>& pUnitPoint);
 		
 		/**
+		 * @brief 获取某单位点处所有节点的形函数导数矩阵 (静态方法)
+		 * @param unitPoint 单位坐标系中的点坐标 {xi, eta, zeta}
+		 * @return 一个 3x8 矩阵，(i, j) 元素是第 j 个节点形函数对第 i 个单位坐标（xi, eta, zeta）的导数
+		 */
+		static Eigen::Matrix<Types::Real, 3, 8> compute_shape_derivatives_at_point(const std::array<Types::Real, 3>& unitPoint) {
+			Eigen::Matrix<Types::Real, 3, 8> derivatives_matrix_unit;
+			Element_HexN8 temp_ele; // 仍需临时对象来调用非静态成员函数 get_shapeFunctionDerivatives
+			for (int iNode = 0; iNode < 8; ++iNode) {
+				// 调用非静态成员函数 get_shapeFunctionDerivatives
+				std::array<Types::Real, 3> derivs = temp_ele.get_shapeFunctionDerivatives(iNode, unitPoint);
+				derivatives_matrix_unit(0, iNode) = derivs[0]; // dNi/dxi
+				derivatives_matrix_unit(1, iNode) = derivs[1]; // dNi/deta
+				derivatives_matrix_unit(2, iNode) = derivs[2]; // dNi/dzeta
+			}
+			return derivatives_matrix_unit;
+		}
+		
+		/**
 		 * @brief 六面体单元的面节点索引定义
 		 * 
 		 * 静态数组，定义了六面体单元六个面上节点的局部索引

@@ -45,7 +45,7 @@ namespace EnSC {
 
 	void exDyna3D::run() {
 		init();
-		//get_fsiSph_virtualParticles_and_vel(1, 1.0/10.0);
+		get_fsiSph_virtualParticles_and_vel(0, 1.0/10.0);
 		while (time < totalTime) {
 			update_minVertex_perMaterial_and_dt();
 			computeSate();
@@ -682,7 +682,7 @@ namespace EnSC {
 	void exDyna3D::computeSate() {
 		time += dt_i_1;
 		apply_boundary_condition_vec();
-		//apply_fsiSph_nodeForce();
+		apply_fsiSph_nodeForce();
 		add_inForce_to_rhs();
 		apply_external_node_force();
 		apply_boundary_condition_a();
@@ -692,7 +692,7 @@ namespace EnSC {
 		update_velocity();
 		update_displacement();
 		move_mesh();
-		//update_virParticles_coor_vel();
+		update_virParticles_coor_vel();
 	}
 
 	void exDyna3D::apply_external_node_force() {
@@ -1246,19 +1246,7 @@ namespace EnSC {
 		}
 	}
 
-    static Eigen::Matrix<Types::Real, 3, 8> compute_shape_derivatives_at_point(const std::array<Types::Real, 3>& unitPoint) {
-		Eigen::Matrix<Types::Real, 3, 8> derivatives_matrix_unit;
-	    Element_HexN8 temp_ele; // 需要一个单元实例来调用方法
-	    for (int iNode = 0; iNode < 8; ++iNode) {
-         // 调用 Element_HexN8 中计算三个方向导数的函数
-         std::array<Types::Real, 3> derivs = temp_ele.get_shapeFunctionDerivatives(iNode, unitPoint);
-         derivatives_matrix_unit(0, iNode) = derivs[0]; // dNi/dxi
-         derivatives_matrix_unit(1, iNode) = derivs[1]; // dNi/deta
-         derivatives_matrix_unit(2, iNode) = derivs[2]; // dNi/dzeta
-		 }
-		 return derivatives_matrix_unit;
-	}
-    
+
 	void exDyna3D::generateVirtualParticlesForFace(
 		int faceIdx,                       // 当前处理的面索引 (0-5)
 		int nLayers,                       // 要生成的粒子层数
@@ -1289,8 +1277,8 @@ namespace EnSC {
 		}
 
 		// --- 步骤 2: 计算面中心点的雅可比矩阵 ---
-		// 调用上面定义的辅助函数计算形函数导数
-		Eigen::Matrix<Types::Real, 3, 8> shape_derivatives_unit_at_surface = compute_shape_derivatives_at_point(unitPointSurface);
+		// 调用 Element_HexN8 类中的静态方法计算形函数导数
+		Eigen::Matrix<Types::Real, 3, 8> shape_derivatives_unit_at_surface = Element_HexN8::compute_shape_derivatives_at_point(unitPointSurface);
 		// 计算雅可比矩阵 J(3x3) = d(x,y,z)/d(xi,eta,zeta) = (dN/dXi)(3x8) * X(8x3)
 		Eigen::Matrix<Types::Real, 3, 3> J = shape_derivatives_unit_at_surface * xyzMatrix;
 
