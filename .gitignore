@@ -6,3 +6,5 @@ build/
 
 # 忽略google test的库
 vcpkg/
+
+ResultData/
