@@ -729,12 +729,14 @@ namespace EnSC {
 		dtStable[iEle] = (std::sqrt(one + xi * xi) - xi) * Len / cd;
 	}
 
-	inline void exDyna3D::reinit_some_CellData(const std::size_t& iEle) {
+	// --- Helper functions for reinit_some_CellData ---
+
+	void exDyna3D::update_element_kinematics(const std::size_t& iEle) {
 		auto& ele = hexahedron_elements[iEle];
 		const auto& Ele_vertices = ele.get_verticesIndex();
 
-		Eigen::Matrix<Real, 3, 8> u_ele;
-		u_ele.setZero();
+		// Note: u_ele is local to reinit_some_CellData and passed to compute_deformation_gradient
+		// We only update all_vel_ele and all_xyz_matrix here.
 
 		for (std::size_t i = 0; i < 8; ++i) {
 			const auto node_id = Ele_vertices[i];
@@ -745,26 +747,30 @@ namespace EnSC {
 			all_vel_ele[iEle](1, i) = solution_v[dof0 + 1];
 			all_vel_ele[iEle](2, i) = solution_v[dof0 + 2];
 
-			// 设置位移
-			u_ele(0, i) = solution_u[dof0];
-			u_ele(1, i) = solution_u[dof0 + 1];
-			u_ele(2, i) = solution_u[dof0 + 2];
-
 			// 设置 xyz_matrix
 			const auto& tmpPoint = vertices[node_id];
 			all_xyz_matrix[iEle](i, 0) = tmpPoint[0];
 			all_xyz_matrix[iEle](i, 1) = tmpPoint[1];
 			all_xyz_matrix[iEle](i, 2) = tmpPoint[2];
 		}
+	}
 
+	void exDyna3D::compute_deformation_gradient(const std::size_t& iEle, const Eigen::Matrix<Real, 3, 8>& u_ele) {
 		// 计算变形梯度 F = I + u_ele * BT
 		all_F[iEle] = Eigen::Matrix<Real, 3, 3>::Identity() + u_ele * all_BT[iEle];
+	}
 
+	void exDyna3D::compute_jacobian(const std::size_t& iEle) {
+		// 计算雅可比行列式 J = det(F)
 		all_J[iEle] = all_F[iEle].determinant();
+	}
 
+	void exDyna3D::compute_spatial_gradient(const std::size_t& iEle) {
 		// 计算 bT = BT * F.inverse()
 		all_bT[iEle] = all_BT[iEle] * all_F[iEle].inverse();
+	}
 
+	void exDyna3D::compute_volume_rate(const std::size_t& iEle) {
 		// 映射 bT 的各列为向量
 		Eigen::Map<const Eigen::Vector<Real, 8>> b0(&all_bT[iEle](0, 0));
 		Eigen::Map<const Eigen::Vector<Real, 8>> b1(&all_bT[iEle](0, 1));
@@ -772,6 +778,39 @@ namespace EnSC {
 
 		// 计算体积变化率 VolRate = vel_ele.row(0).dot(b0) + vel_ele.row(1).dot(b1) + vel_ele.row(2).dot(b2)
 		all_VolRate[iEle] = all_vel_ele[iEle].row(0).dot(b0) + all_vel_ele[iEle].row(1).dot(b1) + all_vel_ele[iEle].row(2).dot(b2);
+	}
+
+
+	inline void exDyna3D::reinit_some_CellData(const std::size_t& iEle) {
+		auto& ele = hexahedron_elements[iEle];
+		const auto& Ele_vertices = ele.get_verticesIndex();
+
+		Eigen::Matrix<Real, 3, 8> u_ele;
+		u_ele.setZero();
+
+		// Update element velocity and current coordinates (all_vel_ele, all_xyz_matrix)
+		update_element_kinematics(iEle);
+
+		// Populate local displacement matrix u_ele (needed for F)
+		for (std::size_t i = 0; i < 8; ++i) {
+			const auto node_id = Ele_vertices[i];
+			const std::size_t dof0 = 3 * node_id;
+			u_ele(0, i) = solution_u[dof0];
+			u_ele(1, i) = solution_u[dof0 + 1];
+			u_ele(2, i) = solution_u[dof0 + 2];
+		}
+
+		// Compute F = I + u_ele * BT
+		compute_deformation_gradient(iEle, u_ele);
+
+		// Compute J = det(F)
+		compute_jacobian(iEle);
+
+		// Compute bT = BT * F.inverse()
+		compute_spatial_gradient(iEle);
+
+		// Compute VolRate = trace(L) where L = vel_ele * bT
+		compute_volume_rate(iEle);
 	}
 
 	inline void exDyna3D::evaluateJaumannResponse(const std::size_t& iEle, Eigen::Matrix<Real, 8, 3>& f) {

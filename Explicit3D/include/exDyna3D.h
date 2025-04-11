@@ -91,6 +91,14 @@ namespace EnSC {
 		inline void computeHourglassForce(const std::size_t& iEle, Eigen::Matrix<Types::Real, 8, 3>& f); // 计算沙漏力
 		inline void computeVolumetricViscosity(const std::size_t& iEle, Eigen::Matrix<Types::Real, 8, 3>& f); // 计算体积粘性力
 
+		// --- Helper functions for reinit_some_CellData ---
+		void update_element_kinematics(const std::size_t& iEle);
+		void compute_deformation_gradient(const std::size_t& iEle, const Eigen::Matrix<Types::Real, 3, 8>& u_ele); // Pass u_ele
+		void compute_jacobian(const std::size_t& iEle);
+		void compute_spatial_gradient(const std::size_t& iEle);
+		void compute_volume_rate(const std::size_t& iEle);
+		// --- End Helper functions ---
+
 		// --- 边界条件相关方法 ---
 		void apply_boundary_condition_vec(); // 施加 Dirichlet 边界条件 (速度/位移约束) 到速度数组
 		void apply_boundary_condition_a();   // 施加 Dirichlet 边界条件到加速度数组 (约束残差力)
