@@ -510,7 +510,7 @@ namespace EnSC {
 
 				// 计算沙漏力和体积粘度
 				computeHourglassForce(iEle, f);
-				computeVolumetricViscosity(iEle, f);
+				//computeVolumetricViscosity(iEle, f);
 
 				// 计算稳定时间步长
 				compute_dtStable(iEle);

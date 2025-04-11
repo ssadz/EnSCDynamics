@@ -8,7 +8,7 @@ test_single.inp
 0.05
 
 #factor of time step
-0.8
+0.71
 
 #time interval
 1e-2
