@@ -436,11 +436,13 @@ namespace EnSC {
 										if (sol_a != 0.0) {
 											// 使用 critical 段保护对共享变量 solution_rf 和 solution_a 的写入
 											// 防止不同任务同时写入同一内存位置导致的数据竞争
-											#pragma omp critical
-											{
-												solution_rf[idx] = -sol_a; // 计算反力
-												solution_a[idx] = 0.0;    // 将加速度设为0
-											}
+											// #pragma omp critical
+											// {
+											// 	solution_rf[idx] = -sol_a; // 计算反力
+											// 	solution_a[idx] = 0.0;    // 将加速度设为0
+											// }
+											solution_rf[idx] = -sol_a; // 计算反力
+											solution_a[idx] = 0.0;    // 将加速度设为0
 										}
 									}
 								}
@@ -703,15 +705,6 @@ namespace EnSC {
 		apply_boundary_condition_vec();
 		apply_fsiSph_nodeForce();
 		add_inForce_to_rhs();
-
-		// <<< 删除：不再需要写入 Volume Rate 到文件 >>>
-		// if (nEle > 0 && volRateOutputFile.is_open()) { // 确保有单元且文件已打开
-		// 	 // 假设只有一个单元 (iEle = 0)，直接访问 all_VolRate[0]
-		// 	 volRateOutputFile << std::scientific << std::setprecision(10) // 设置格式为科学计数法
-		// 	                   << time << "\t" << all_VolRate[0] << std::endl;
-		// }
-		// <<< 结束新增/修改 >>>
-
 		apply_external_node_force();
 		apply_boundary_condition_a();
 		compute_a();
