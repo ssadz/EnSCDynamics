@@ -190,6 +190,9 @@ namespace EnSC {
 		Types::Real Cvisl;                  // 体积粘性系数
 		Types::Real Cvisq;                  // 体积粘性稳定系数
 
+		// <<< 新增：体积变化率计算阈值 >>>
+		const Types::Real volRateThreshold = static_cast<Types::Real>(1e-10);
+
 		// --- 重力、边界条件初始化数据 ---
 		std::tuple<bool, std::string, Types::Real, Types::Real, Types::Real, Types::Real> gravity; // 重力
 		std::vector<std::tuple<std::string, std::string, std::string, Types::Real>> dsload;        // 分布外力 (瞬时存储)

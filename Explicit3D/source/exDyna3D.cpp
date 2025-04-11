@@ -41,7 +41,12 @@ namespace EnSC {
 		std::get<0>(gravity) = false;
 	}
 
-	exDyna3D::~exDyna3D() {}
+	exDyna3D::~exDyna3D() {
+		// <<< 删除：不再需要关闭文件流 >>>
+		// if (volRateOutputFile.is_open()) {
+		// 	 volRateOutputFile.close();
+		// }
+	}
 
 	void exDyna3D::run() {
 		init();
@@ -154,6 +159,20 @@ namespace EnSC {
 
 		feValuesHex.init(EleType::hexN8);
 		have_run = true;
+
+		// <<< 删除：不再需要打开文件流 >>>
+		// try {
+		// 	 volRateOutputFile.open("volume_rate_output.txt", std::ios::out | std::ios::trunc);
+		// 	 if (volRateOutputFile.is_open()) {
+		// 	 	 volRateOutputFile << "# Time\tVolumeRate" << std::endl; // 写入表头
+		// 	 }
+		// 	 else {
+		// 	 	 std::cerr << "错误: 无法打开 volume_rate_output.txt 文件进行写入。" << std::endl;
+		// 	 }
+		// }
+		// catch (const std::ofstream::failure& e) {
+		// 	 std::cerr << "错误: 打开/写入 volume_rate_output.txt 时发生异常: " << e.what() << std::endl;
+		// }
 	}
 
 	void exDyna3D::output_results() {
@@ -510,7 +529,7 @@ namespace EnSC {
 
 				// 计算沙漏力和体积粘度
 				computeHourglassForce(iEle, f);
-				//computeVolumetricViscosity(iEle, f);
+				computeVolumetricViscosity(iEle, f);
 
 				// 计算稳定时间步长
 				compute_dtStable(iEle);
@@ -684,6 +703,15 @@ namespace EnSC {
 		apply_boundary_condition_vec();
 		apply_fsiSph_nodeForce();
 		add_inForce_to_rhs();
+
+		// <<< 删除：不再需要写入 Volume Rate 到文件 >>>
+		// if (nEle > 0 && volRateOutputFile.is_open()) { // 确保有单元且文件已打开
+		// 	 // 假设只有一个单元 (iEle = 0)，直接访问 all_VolRate[0]
+		// 	 volRateOutputFile << std::scientific << std::setprecision(10) // 设置格式为科学计数法
+		// 	                   << time << "\t" << all_VolRate[0] << std::endl;
+		// }
+		// <<< 结束新增/修改 >>>
+
 		apply_external_node_force();
 		apply_boundary_condition_a();
 		compute_a();
@@ -976,6 +1004,13 @@ namespace EnSC {
 		const Real c = mMatElastic.WOS; // 波速
 		const Real Len = std::cbrt(V0);
 		const Real& VolRate = all_VolRate[iEle]; // 新增
+
+		// <<< 新增：检查 VolRate 是否低于阈值 >>>
+		if (std::abs(VolRate) < volRateThreshold) {
+			 return; // 如果太小，则认为没有体积变化，不计算体积粘性
+		}
+		// <<< 结束新增 >>>
+
 		const Real rho = rho_int / J; // 当前密度
 		const Real p = rho * Len * (Cvisq * Cvisq * Len * VolRate * std::min(zero, VolRate) - Cvisl * c * VolRate);
 
@@ -1306,9 +1341,9 @@ namespace EnSC {
 			case 0: unitPointSurface = {-1.0, 0.0, 0.0}; n_unit_vec << 1.0, 0.0, 0.0; break; // xi=-1 面, 法线 +xi
 			case 1: unitPointSurface = { 1.0, 0.0, 0.0}; n_unit_vec << -1.0, 0.0, 0.0; break; // xi= 1 面, 法线 -xi
 			case 2: unitPointSurface = { 0.0, -1.0, 0.0}; n_unit_vec << 0.0, 1.0, 0.0; break; // eta=-1 面, 法线 +eta
-			case 3: unitPointSurface = { 0.0, 1.0, 0.0}; n_unit_vec << 0.0, -1.0, 0.0; break; // eta= 1 面, 法线 -eta
+			case 3: unitPointSurface = { 0.0, 1.0, 0.0}; n_unit_vec << 0.0, -1.0, 0.0; break; // eta= 1  面, 法线 -eta
 			case 4: unitPointSurface = { 0.0, 0.0, -1.0}; n_unit_vec << 0.0, 0.0, 1.0; break; // zeta=-1 面, 法线 +zeta
-			case 5: unitPointSurface = { 0.0, 0.0, 1.0}; n_unit_vec << 0.0, 0.0, -1.0; break; // zeta= 1 面, 法线 -zeta
+			case 5: unitPointSurface = { 0.0, 0.0, 1.0}; n_unit_vec << 0.0, 0.0, -1.0; break; // zeta= 1  面, 法线 -zeta
 			default:
 				// 增加健壮性：记录错误或抛出异常
 				std::cerr << "错误: 在 generateVirtualParticlesForFace 中遇到无效的面索引 (" << faceIdx << ")" << std::endl;
