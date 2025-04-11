@@ -1483,5 +1483,72 @@ namespace EnSC {
 		}
 	}//apply_fsiSph_nodeForce() 结束
 
+    void exDyna3D::update_virParticles_coor_vel()
+    {
+        // 使用OpenMP tasks直接处理map
+        #pragma omp parallel
+        {
+            #pragma omp single
+            {
+                for (const auto& elementPair : map_eleIndex_virParticle_unit_data)
+                {
+                    #pragma omp task
+                    {
+                        const unsigned int elementIndex = elementPair.first;
+                        Eigen::Matrix<Types::Real, 1, 8> shapeFunctionValues;
+                        Eigen::Matrix<Types::Real, 8, 3> nodeCoordinates;
+                        Eigen::Matrix<Types::Real, 8, 3> nodeVelocities;
+                        Eigen::Matrix<Types::Real, 1, 3> particleCoordinates;
+                        Eigen::Matrix<Types::Real, 1, 3> particleVelocities;
+                        
+                        // 获取单元信息
+                        auto& element = hexahedron_elements[elementIndex];
+                        const auto& nodeIndices = element.get_verticesIndex();
+                        for (int j = 0; j < 8; ++j)
+                        {
+                            // 获取节点速度
+                            unsigned int dof0 = 3 * nodeIndices[j];
+                            nodeVelocities(j, 0) = solution_v[dof0];
+                            nodeVelocities(j, 1) = solution_v[dof0 + 1];
+                            nodeVelocities(j, 2) = solution_v[dof0 + 2];
+                            // 获取节点坐标
+                            const Types::Point<3>& nodePoint = vertices[nodeIndices[j]];
+                            nodeCoordinates(j, 0) = nodePoint[0];
+                            nodeCoordinates(j, 1) = nodePoint[1];
+                            nodeCoordinates(j, 2) = nodePoint[2];
+                        }
 
+                        // 获取该单元的虚拟粒子信息
+                        const auto& virtualParticleUnitCoords = elementPair.second;
+                        const auto& virtualParticleIndices = map_eleIndex_virParticles_index[elementIndex];
+                        
+                        // 使用两个独立迭代器同步迭代
+                        auto unitCoordIter = virtualParticleUnitCoords.cbegin();
+                        auto virtualParticleIter = virtualParticleIndices.cbegin();
+                        
+                        for (; unitCoordIter != virtualParticleUnitCoords.cend(); ++unitCoordIter, ++virtualParticleIter)
+                        {
+                            // 计算形函数值
+                            for (int j = 0; j < 8; ++j)
+                            {
+                                shapeFunctionValues(j) = element.get_shapeFunctionValue(j, *unitCoordIter);
+                            }
+                            // 计算虚拟粒子的实际坐标和速度
+                            particleCoordinates = shapeFunctionValues * nodeCoordinates;
+                            particleVelocities = shapeFunctionValues * nodeVelocities;
+                            // 更新FSI共享数据中的虚拟粒子坐标和速度
+                            auto& virtualParticleCoords = fsi_share_data.FSI_virtualParticles_coordinates[*virtualParticleIter];
+                            auto& virtualParticleVels = fsi_share_data.FSI_virtualParticles_velocity[*virtualParticleIter];
+                            
+                            for (int j = 0; j < 3; ++j)
+                            {
+                                virtualParticleCoords[j] = particleCoordinates(j);
+                                virtualParticleVels[j] = particleVelocities(j);
+                            }
+                        }
+                    } // end task
+                }
+            } // end single
+        } // end parallel
+    }//update_virParticles_coor_vel()结束
 }
