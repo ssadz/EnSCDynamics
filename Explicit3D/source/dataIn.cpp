@@ -65,7 +65,7 @@ namespace EnSC {
 	 */
 	DataIn::DataIn(exDyna3D& p_exdyna)
 		:exdyna(p_exdyna) {
-		// 建立关键字到处理函数的映射
+		// 初始化关键字映射表，将输入文件中的关键字与对应的处理函数关联
 		k_func["*NODE"] = &DataIn::NODE;                   // 节点数据
 		k_func["*ELEMENT"] = &DataIn::ELEMENT;             // 单元数据
 		k_func["*MATERIAL"] = &DataIn::MATERIAL;           // 材料属性
@@ -79,6 +79,8 @@ namespace EnSC {
 		k_func["*ELSET"] = &DataIn::SET_ELE_LIST;          // 单元集合
 		k_func["*SURFACE"] = &DataIn::SURFACE;             // 表面定义
 		k_func["*BULK VISCOSITY"] = &DataIn::BULK_VISCOSITY; // 体积粘性参数
+		k_func["*OUTPUT INTERVAL"] = &DataIn::OUTPUT_INTERVAL; // 自定义输出间隔设置
+		k_func["*OUTPUT"] = &DataIn::OUTPUT;               // Abaqus输出设置
 	}
 
 	/**
@@ -792,6 +794,76 @@ namespace EnSC {
 			std::get<2>(exdyna.dsload.back()) = amp_name;
 			std::get<3>(exdyna.dsload.back()) = load_value;
 		}
+		return true;
+	}
+
+	bool DataIn::OUTPUT_INTERVAL() {
+		// 跳过可能存在的注释行
+		while (fin.peek() == '*')
+			std::getline(fin, str);
+		
+		// 读取输出间隔值
+		if (fin.peek() != '*' && !fin.eof()) {
+			std::getline(fin, str);
+			std::istringstream iss(str);
+			std::string token;
+			
+			// 读取输出间隔
+			std::getline(iss, token, ',');
+			if (!token.empty()) {
+				// 将读取的值设置为exdyna的time_interval
+				exdyna.time_interval = convertString<Types::Real>(token);
+				std::cout << "从inp文件中读取到输出间隔: " << exdyna.time_interval << std::endl;
+				
+				// 标记time_interval已被设置
+				exdyna.time_interval_set = true;
+			}
+		}
+		
+		return true;
+	}
+
+	bool DataIn::OUTPUT() {
+		// 读取Abaqus的*Output关键字行
+		std::string original_line = str;
+		
+		// 转换为大写以便查找参数（不区分大小写）
+		std::string upper_line = original_line;
+		toUpperCase(upper_line);
+		
+		// 检查是否包含number interval参数
+		size_t pos = upper_line.find("NUMBER INTERVAL=");
+		if (pos != std::string::npos) {
+			// 提取number interval的值
+			std::string interval_str = original_line.substr(pos + 16); // 16是"NUMBER INTERVAL="的长度
+			// 查找逗号或空格，确定值的结束位置
+			size_t end_pos = interval_str.find_first_of(", ");
+			if (end_pos != std::string::npos) {
+				interval_str = interval_str.substr(0, end_pos);
+			}
+			
+			// 转换为数值
+			try {
+				int number_interval = std::stoi(interval_str);
+				
+				// 根据Abaqus的number interval设置time_interval
+				// number interval是总步数的划分，所以time_interval = totalTime / number_interval
+				if (number_interval > 0) {
+					exdyna.time_interval = exdyna.totalTime / number_interval;
+					exdyna.time_interval_set = true;
+					std::cout << "从inp文件的*Output设置中读取到number interval=" << number_interval 
+					          << "，设置time_interval=" << exdyna.time_interval << std::endl;
+				}
+			} catch (const std::exception& e) {
+				std::cerr << "解析OUTPUT的number interval参数时出错: " << e.what() << std::endl;
+			}
+		}
+		
+		// 跳过*Output下面的内容，直到下一个关键字或文件结束
+		while (fin.peek() != '*' && !fin.eof()) {
+			std::getline(fin, str);
+		}
+		
 		return true;
 	}
 

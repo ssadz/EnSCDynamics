@@ -55,6 +55,10 @@ namespace EnSC {
 		bool SURFACE();
 		// 解析体积粘性参数
 		bool BULK_VISCOSITY();
+		// 解析输出间隔设置（自定义）
+		bool OUTPUT_INTERVAL();
+		// 解析Abaqus输出设置
+		bool OUTPUT();
 		// 解析节点位移约束
 		void SPC_NODE();
 		// 解析初始速度

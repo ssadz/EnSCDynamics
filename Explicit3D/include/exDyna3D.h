@@ -209,6 +209,7 @@ namespace EnSC {
 		// --- 输出相关数据 ---
 		Types::Real time_interval;          // 时间间隔
 		Types::Real time_output;            // 上一时间输出时间
+		bool time_interval_set;             // 标记time_interval是否已设置
 
 		// --- 计算辅助数据 (单元) ---
 		Eigen::Matrix<Types::Real, Eigen::Dynamic, 1> von_mises; // Von Mises 应力

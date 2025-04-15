@@ -37,7 +37,8 @@ namespace EnSC {
 		Cvisl((Real)0.06),
 		Cvisq((Real)1.2),
 		time_interval(one),
-		time_output(zero) {
+		time_output(zero),
+		time_interval_set(false) {
 		std::get<0>(gravity) = false;
 	}
 
@@ -50,6 +51,43 @@ namespace EnSC {
 
 	void exDyna3D::run() {
 		init();
+		
+		// 如果time_interval为0或未设置，设置为每秒50帧
+		if (time_interval <= 0.0 || !time_interval_set) {
+			if (totalTime <= 0.0) {
+				// 如果totalTime无效，使用默认值
+				time_interval = 1e-2;
+				std::cout << "警告: totalTime无效，使用默认time_interval = " << time_interval << std::endl;
+			} else {
+				// 设置为每秒50帧
+				time_interval = 1.0 / 50.0;
+				
+				// 确保总帧数不少于10帧且不超过1000帧
+				int total_frames = static_cast<int>(totalTime / time_interval) + 1;
+				
+				if (total_frames < 10) {
+					// 如果总帧数少于10，调整为10帧
+					time_interval = totalTime / 10.0;
+					std::cout << "totalTime较小，调整为输出10帧，time_interval = " << time_interval << std::endl;
+				} else if (total_frames > 1000) {
+					// 如果总帧数超过1000，调整为1000帧
+					time_interval = totalTime / 1000.0;
+					std::cout << "totalTime较大，调整为输出1000帧，time_interval = " << time_interval << std::endl;
+				} else {
+					std::cout << "设置time_interval = " << time_interval << "（每秒50帧）" << std::endl;
+				}
+			}
+		}
+		
+		// 确保time_interval不超过totalTime
+		if (time_interval > totalTime && totalTime > 0.0) {
+				time_interval = totalTime;
+				std::cout << "time_interval超过totalTime，已调整为" << time_interval << std::endl;
+		}
+		
+		// 初始化time_output
+		time_output = time_interval;
+		
 		get_fsiSph_virtualParticles_and_vel(0, 1.0/10.0);
 		while (time < totalTime) {
 			update_minVertex_perMaterial_and_dt();
@@ -658,6 +696,12 @@ namespace EnSC {
 	}
 
 	void exDyna3D::read_project_txt() {
+		// 默认值设置
+		c_dr = 0.013;          // Stiffiness Hourglass Control parameter
+		c_cr = 0.05;           // Viscosity Hourglass Control parameter
+		factor_timeStep = 0.71; // factor of time step
+		// time_interval将在读取inp文件后设置为totalTime/100
+
 		std::string str, fileName = "project.txt";
 		std::ifstream fin;
 		fin.open(fileName);
@@ -667,34 +711,61 @@ namespace EnSC {
 			exit(-1);
 		}
 
-		//k file name skip
-		std::getline(fin, str);
-		std::getline(fin, str);
-		std::getline(fin, str);
+		// 尝试读取inp文件名
+		std::getline(fin, str); // 跳过第一行注释
+		std::getline(fin, str); // 读取inp文件名
+		
+		// 检查是否还有更多设置
+		bool has_more_settings = false;
+		std::string temp;
+		while (std::getline(fin, temp)) {
+			// 忽略空行和注释行
+			if (temp.empty() || temp[0] == '#') continue;
+			has_more_settings = true;
+			break;
+		}
+		
+		// 如果有更多设置，回到文件开头重新读取完整配置
+		if (has_more_settings) {
+			fin.clear();
+			fin.seekg(0, std::ios::beg);
+			
+			//k file name skip
+			std::getline(fin, str);
+			std::getline(fin, str);
+			std::getline(fin, str);
 
-		//c_dr
-		std::getline(fin, str);
-		fin >> c_dr;
-		std::getline(fin, str);
-		std::getline(fin, str);
+			//c_dr
+			std::getline(fin, str);
+			fin >> c_dr;
+			std::getline(fin, str);
+			std::getline(fin, str);
 
-		//c_cr
-		std::getline(fin, str);
-		fin >> c_cr;
-		std::getline(fin, str);
-		std::getline(fin, str);
+			//c_cr
+			std::getline(fin, str);
+			fin >> c_cr;
+			std::getline(fin, str);
+			std::getline(fin, str);
 
+			//factor of time step
+			std::getline(fin, str);
+			fin >> factor_timeStep;
+			std::getline(fin, str);
+			std::getline(fin, str);
 
-		//factor of time step
-		std::getline(fin, str);
-		fin >> factor_timeStep;
-		std::getline(fin, str);
-		std::getline(fin, str);
-
-		std::getline(fin, str);
-		fin >> time_interval;
-		if (time_interval > totalTime) {
-			time_interval = totalTime;
+			// 只有当inp文件中没有设置time_interval时才从project.txt中读取
+			if (!time_interval_set) {
+				std::getline(fin, str);
+				fin >> time_interval;
+			} else {
+				// 如果已在inp中设置，则跳过project.txt中的time_interval
+				std::cout << "跳过project.txt中的time_interval，使用inp文件中的设置: " << time_interval << std::endl;
+			}
+		} else {
+			// 如果只有文件名，将在读取inp后设置time_interval
+			if (!time_interval_set) {
+				time_interval = 0.0; // 临时值，标记为需要设置
+			}
 		}
 
 		fin.close();

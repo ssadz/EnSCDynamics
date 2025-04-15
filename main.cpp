@@ -13,9 +13,26 @@ int main() {
 		std::cout << "Can not open " << "project.txt" << std::endl;
 		exit(-1);
 	}
-	std::getline(fin, str);
-	fin >> filename;
+	
+	// 跳过注释行，读取inp文件名
+	bool found_filename = false;
+	while (std::getline(fin, str) && !found_filename) {
+		// 忽略空行
+		if (str.empty()) continue;
+		// 忽略注释行
+		if (str[0] == '#') continue;
+		// 找到非注释行，非空行，视为文件名
+		filename = str;
+		found_filename = true;
+	}
+	
 	fin.close();
+	
+	if (!found_filename) {
+		std::cout << "无法从project.txt中找到有效的inp文件名" << std::endl;
+		exit(-1);
+	}
+	
 	filename = "inp/" + filename;
 	dataIn.read_inp(filename);
 	// Start the timer

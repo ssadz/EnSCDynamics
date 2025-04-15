@@ -69,7 +69,7 @@ Set-1, 1, 0.1
 ** 
 ** FIELD OUTPUT: F-Output-1
 ** 
-*Output, field, variable=PRESELECT
+*Output, field, variable=PRESELECT, number interval=50
 ** 
 ** HISTORY OUTPUT: H-Output-1
 ** 
