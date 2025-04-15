@@ -85,9 +85,32 @@ namespace EnSC {
 		time_output = 0.0; // Changed from time_interval to 0.0
 		
 		get_fsiSph_virtualParticles_and_vel(0, 1.0/10.0);
-		while (time < totalTime) {
-			update_minVertex_perMaterial_and_dt();
-			computeSate();
+		
+		// 打印步骤信息进行调试
+		std::cout << "总步骤数: " << steps.size() << std::endl;
+		for (std::size_t i = 0; i < steps.size(); ++i) {
+			std::cout << "步骤 " << i << ": " << steps[i].name 
+				<< " 时间周期=" << steps[i].timePeriod 
+				<< " 约束条件数=" << steps[i].boundary_spc_node.size() 
+				<< " 速度条件数=" << steps[i].boundary_vel_node.size() << std::endl;
+		}
+		
+		// 遍历所有步骤进行计算
+		for (std::size_t stepIndex = 0; stepIndex < steps.size(); ++stepIndex) {
+			const auto& stepData = steps[stepIndex];
+			std::cout << "开始计算步骤 " << stepData.name << " (时间周期: " << stepData.timePeriod << ")" << std::endl;
+			
+			// 设置当前步骤
+			setCurrentStep(stepIndex);
+			
+			// 设置步骤的结束时间
+			Types::Real stepEndTime = time + stepData.timePeriod;
+			
+			// 计算时间步
+			while (time < stepEndTime) {
+				update_minVertex_perMaterial_and_dt();
+				computeSate();
+			}
 		}
 	}
 
@@ -192,21 +215,11 @@ namespace EnSC {
 		}
 
 		feValuesHex.init(EleType::hexN8);
+		
+		// 初始化步骤相关变量
+		currentStepIndex = 0;
+		
 		have_run = true;
-
-		// <<< 删除：不再需要打开文件流 >>>
-		// try {
-		// 	 volRateOutputFile.open("volume_rate_output.txt", std::ios::out | std::ios::trunc);
-		// 	 if (volRateOutputFile.is_open()) {
-		// 	 	 volRateOutputFile << "# Time\tVolumeRate" << std::endl; // 写入表头
-		// 	 }
-		// 	 else {
-		// 	 	 std::cerr << "错误: 无法打开 volume_rate_output.txt 文件进行写入。" << std::endl;
-		// 	 }
-		// }
-		// catch (const std::ofstream::failure& e) {
-		// 	 std::cerr << "错误: 打开/写入 volume_rate_output.txt 时发生异常: " << e.what() << std::endl;
-		// }
 	}
 
 	void exDyna3D::output_results() {
@@ -1711,4 +1724,27 @@ namespace EnSC {
             } // end single
         } // end parallel
     }//update_virParticles_coor_vel()结束
+
+	void exDyna3D::setCurrentStep(std::size_t stepIndex) {
+		// 避免越界访问
+		if (stepIndex >= steps.size()) {
+			std::cerr << "Warning: Step index " << stepIndex << " out of range. Maximum index is " 
+					  << steps.size() - 1 << std::endl;
+			return;
+		}
+		
+		// 更新当前步骤索引
+		currentStepIndex = stepIndex;
+		
+		// 获取当前步骤数据
+		const auto& stepData = steps[stepIndex];
+		
+		// 更新边界条件
+		boundary_spc_node = stepData.boundary_spc_node;
+		boundary_vel_node = stepData.boundary_vel_node;
+		
+		// 其他特定于步骤的设置可以在这里添加
+		
+		std::cout << "Changed to step: " << stepData.name << " with time period: " << stepData.timePeriod << std::endl;
+	}
 }

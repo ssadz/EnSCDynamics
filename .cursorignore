@@ -1,0 +1,17 @@
+# Add directories or file patterns to ignore during indexing (e.g. foo/ or *.csv)
+# 忽略项目中任何位置的 build 文件夹及其内容
+build/
+
+# 忽略 IDE 配置文件（如 VS Code）
+.vscode/
+
+# 忽略google test的库
+vcpkg/
+
+ResultData/
+
+eigen/
+
+vcpkg/
+
+VTK_win64/

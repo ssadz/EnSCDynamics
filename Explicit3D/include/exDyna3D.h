@@ -26,6 +26,9 @@
 
 namespace EnSC {
 
+	// --- 前向声明 ---
+	class DataIn;
+
 	// --- 材料属性结构体 ---
 	struct Material_elastic {
 		void update(); // 更新派生材料属性的方法
@@ -40,6 +43,15 @@ namespace EnSC {
 		Types::Real K;      // 体积模量 = E / (3 * (1 - 2 * v))
 		Types::Real lambda; // 拉梅第一参数 = (E * v) / ((1 + v) * (1 - 2 * v))
 		Types::Real WOS;    // 声速 (材料参数)
+	};
+
+	// --- 步骤数据结构 ---
+	struct StepData {
+		std::string name;                 // 步骤名称
+		Types::Real timePeriod;           // 时间周期
+		std::vector<std::pair<std::vector<std::size_t>, std::array<std::size_t, 3>>> boundary_spc_node; // 位移约束节点集合
+		std::vector<std::pair<std::vector<std::size_t>, std::pair<std::array<std::size_t, 2>, Types::Real>>> boundary_vel_node; // 速度约束节点集合
+		// 其他特定于步骤的数据可以在这里添加
 	};
 
 	// --- 单元数据结构体 (模板前向声明) ---
@@ -66,6 +78,10 @@ namespace EnSC {
 		// --- 主要公共接口 ---
 		virtual void run();  // 执行模拟
 		void init();         // 初始化模型
+		
+		// --- 时间步骤控制 ---
+		void setCurrentStep(std::size_t stepIndex); // 设置当前时间步骤
+		std::size_t getCurrentStep() const { return currentStepIndex; } // 获取当前时间步骤索引
 
 		// --- FSI 共享数据 (允许外部访问/修改) ---
 		FSI_share_data fsi_share_data;
@@ -220,6 +236,10 @@ namespace EnSC {
 		std::vector<std::pair<int, std::vector<int>>> fsiBoundaryElementFaces; // FSI 边界单元面 -> 边界`面数组
 		std::map<int, std::vector<std::array<Types::Real, 3>>> map_eleIndex_virParticle_unit_data; // 单元 -> 虚拟粒子单位坐标数组
 		std::map<int, std::vector<int>> map_eleIndex_virParticles_index; // 单元 -> 虚拟粒子全索引数组
+
+		// --- 新增变量 ---
+		std::size_t currentStepIndex; // 新增变量：当前时间步骤索引
+		std::vector<StepData> steps;  // 新增变量：所有步骤的数据
 
 	};
 

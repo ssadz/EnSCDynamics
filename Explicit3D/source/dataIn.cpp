@@ -178,6 +178,20 @@ namespace EnSC {
 	bool DataIn::END_STEP() {
 		currentState = ParseState::GLOBAL;
 		std::cout << "结束步骤定义: " << currentStepName << std::endl;
+		
+		// 增加更多调试信息
+		if (!exdyna.steps.empty()) {
+			StepData& currentStep = exdyna.steps.back();
+			std::cout << "------------------步骤调试信息------------------" << std::endl;
+			std::cout << "步骤名称: " << currentStep.name << std::endl;
+			std::cout << "时间周期: " << currentStep.timePeriod << std::endl;
+			std::cout << "空间边界条件节点数: " << currentStep.boundary_spc_node.size() << std::endl;
+			std::cout << "速度边界条件节点数: " << currentStep.boundary_vel_node.size() << std::endl;
+			std::cout << "------------------------------------------------" << std::endl;
+		} else {
+			std::cout << "警告: 当前步骤数据未保存!" << std::endl;
+		}
+		
 		return true;
 	}
 
@@ -262,9 +276,15 @@ namespace EnSC {
 						else if (str.find("*STEP") != std::string::npos) {
 							currentStepName = extractNameFromKeyword(str);
 							if (currentStepName.empty()) {
-								currentStepName = "Step-1"; // 默认名称
+								currentStepName = "Step-" + std::to_string(exdyna.steps.size() + 1); // 默认名称
 							}
 							currentState = ParseState::STEP_DEFINITION;
+							
+							// 创建新的步骤数据
+							StepData stepData;
+							stepData.name = currentStepName;
+							exdyna.steps.push_back(stepData);
+							
 							std::cout << "进入步骤定义模式: " << currentStepName << std::endl;
 							continue;
 						}
@@ -744,7 +764,15 @@ namespace EnSC {
 			
 			// 读取总模拟时间
 			std::getline(iss, token, ',');
-			exdyna.totalTime = convertString<Types::Real>(token);
+			Types::Real timePeriod = convertString<Types::Real>(token);
+            
+			// 如果当前在解析步骤，为当前步骤设置时间周期
+			if (currentState == ParseState::STEP_DEFINITION && !exdyna.steps.empty()) {
+				exdyna.steps.back().timePeriod = timePeriod;
+			}
+            
+			// 同时更新总时间
+			exdyna.totalTime += timePeriod;
 		}
 		return true;
 	}
@@ -786,7 +814,9 @@ namespace EnSC {
 		while (fin.peek() != '*' && !fin.eof()) {
 			std::getline(fin, str);
 			toUpperCase(str);
-			exdyna.boundary_spc_node.emplace_back();
+            
+			// 创建临时约束数据
+			std::pair<std::vector<std::size_t>, std::array<std::size_t, 3>> boundary_data;
 			std::istringstream iss(str);
 			std::string token;
 
@@ -794,38 +824,75 @@ namespace EnSC {
 			if (str.find("SET-") != std::string::npos) {
 				// 使用预定义的节点集合
 				std::getline(iss, token, ',');
-				exdyna.boundary_spc_node.back().first = exdyna.map_set_node_list[token];
+				boundary_data.first = exdyna.map_set_node_list[token];
 			}
 			else {
 				// 单个节点
 				std::getline(iss, token, ',');
-				exdyna.boundary_spc_node.back().first.push_back(std::stoi(token));
+				boundary_data.first.push_back(std::stoi(token));
 			}
 
-			// 处理特殊约束类型（固定所有自由度）
+			// 处理特殊约束类型
 			if (str.find("PINNED") != std::string::npos || str.find("ENCASTRE") != std::string::npos) {
-				exdyna.boundary_spc_node.back().second.at(0) = 0;  // 起始自由度
-				exdyna.boundary_spc_node.back().second.at(1) = 2;  // 结束自由度
-				exdyna.boundary_spc_node.back().second.at(2) = 1;  // 增量
+				boundary_data.second.at(0) = 0;  // 起始自由度
+				boundary_data.second.at(1) = 2;  // 结束自由度
+				boundary_data.second.at(2) = 1;  // 增量
+			}
+			else if (str.find("XSYMM") != std::string::npos) {
+				// X对称：约束X方向位移
+				boundary_data.second.at(0) = 0;  // X方向 (第1个自由度)
+				boundary_data.second.at(1) = 0;  // 仅X方向
+				boundary_data.second.at(2) = 1;  // 增量
+			}
+			else if (str.find("YSYMM") != std::string::npos) {
+				// Y对称：约束Y方向位移
+				boundary_data.second.at(0) = 1;  // Y方向 (第2个自由度)
+				boundary_data.second.at(1) = 1;  // 仅Y方向
+				boundary_data.second.at(2) = 1;  // 增量
+			}
+			else if (str.find("ZSYMM") != std::string::npos) {
+				// Z对称：约束Z方向位移
+				boundary_data.second.at(0) = 2;  // Z方向 (第3个自由度)
+				boundary_data.second.at(1) = 2;  // 仅Z方向
+				boundary_data.second.at(2) = 1;  // 增量
 			}
 			else {
 				// 读取自由度约束定义
 				std::getline(iss, token, ',');
-				exdyna.boundary_spc_node.back().second.at(0) = std::stoi(token) - 1;  // 起始自由度
-				
-				std::getline(iss, token, ',');
 				if (token.empty()) {
-					// 如果没有指定结束自由度，则设置为与起始自由度相同
-					exdyna.boundary_spc_node.back().second.at(1) = exdyna.boundary_spc_node.back().second.at(0);
+					// 如果没有指定自由度，默认约束所有自由度
+					boundary_data.second.at(0) = 0;
+					boundary_data.second.at(1) = 2;
+					boundary_data.second.at(2) = 1;
+				} else {
+					boundary_data.second.at(0) = std::stoi(token) - 1;  // 起始自由度
+					
+					std::getline(iss, token, ',');
+					if (token.empty()) {
+						// 如果没有指定结束自由度，则设置为与起始自由度相同
+						boundary_data.second.at(1) = boundary_data.second.at(0);
+					}
+					else {
+						boundary_data.second.at(1) = std::stoi(token) - 1;  // 结束自由度
+					}
+					
+					// 读取增量
+					std::getline(iss, token, ',');
+					if (token.empty()) {
+						boundary_data.second.at(2) = 1;  // 默认增量为1
+					} else {
+						boundary_data.second.at(2) = std::stoi(token);
+					}
 				}
-				else {
-					exdyna.boundary_spc_node.back().second.at(1) = std::stoi(token) - 1;  // 结束自由度
-				}
-				
-				// 读取增量
-				std::getline(iss, token, ',');
-				exdyna.boundary_spc_node.back().second.at(2) = std::stoi(token);
 			}
+            
+			// 添加到当前步骤的约束列表中
+			if (currentState == ParseState::STEP_DEFINITION && !exdyna.steps.empty()) {
+				exdyna.steps.back().boundary_spc_node.push_back(boundary_data);
+			}
+            
+			// 同时也添加到全局约束列表中（保持向后兼容）
+			exdyna.boundary_spc_node.push_back(boundary_data);
 		}
 	}
 
@@ -948,36 +1015,47 @@ namespace EnSC {
 			std::string token;
 
 			// 创建临时结构存储速度边界条件
-			std::pair<std::array<std::size_t, 2>, Types::Real>temp_pair;
+			std::pair<std::array<std::size_t, 2>, Types::Real> temp_pair;
 			temp_pair.first[0] = 0;
 			temp_pair.first[1] = 0;
 			temp_pair.second = 0.0;
 			
+			std::pair<std::vector<std::size_t>, std::pair<std::array<std::size_t, 2>, Types::Real>> boundary_data;
+			boundary_data.second = temp_pair;
+			
 			// 处理节点集合或单个节点
 			if (str.find("SET-") != std::string::npos) {
 				std::getline(iss, token, ',');
-				exdyna.boundary_vel_node.emplace_back(exdyna.map_set_node_list[token], temp_pair);
+				boundary_data.first = exdyna.map_set_node_list[token];
 			}
 			else {
 				std::getline(iss, token, ',');
-				std::vector<std::size_t>temp_vector;
+				std::vector<std::size_t> temp_vector;
 				temp_vector.emplace_back(std::stoi(token) - 1);
-				exdyna.boundary_vel_node.emplace_back(temp_vector, temp_pair);
+				boundary_data.first = temp_vector;
 			}
 
 			std::getline(iss, token, ',');
-			exdyna.boundary_vel_node.back().second.first[0] = std::stoi(token) - 1;
+			boundary_data.second.first[0] = std::stoi(token) - 1;
 			std::getline(iss, token, ',');
 			if (token.empty()) {
-				exdyna.boundary_vel_node.back().second.first[1] = exdyna.boundary_vel_node.back().second.first[0];
+				boundary_data.second.first[1] = boundary_data.second.first[0];
 			}
 			else {
-				exdyna.boundary_vel_node.back().second.first[1] = std::stoi(token) - 1;
+				boundary_data.second.first[1] = std::stoi(token) - 1;
 			}
 
 			if (std::getline(iss, token, ',')) {
-				exdyna.boundary_vel_node.back().second.second = convertString<Types::Real>(token);
+				boundary_data.second.second = convertString<Types::Real>(token);
 			}
+            
+			// 添加到当前步骤的约束列表中
+			if (currentState == ParseState::STEP_DEFINITION && !exdyna.steps.empty()) {
+				exdyna.steps.back().boundary_vel_node.push_back(boundary_data);
+			}
+            
+			// 同时也添加到全局约束列表中（保持向后兼容）
+			exdyna.boundary_vel_node.push_back(boundary_data);
 		}
 	}
 
