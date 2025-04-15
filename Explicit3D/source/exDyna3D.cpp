@@ -43,10 +43,6 @@ namespace EnSC {
 	}
 
 	exDyna3D::~exDyna3D() {
-		// <<< 删除：不再需要关闭文件流 >>>
-		// if (volRateOutputFile.is_open()) {
-		// 	 volRateOutputFile.close();
-		// }
 	}
 
 	void exDyna3D::run() {
@@ -86,7 +82,7 @@ namespace EnSC {
 		}
 		
 		// 初始化time_output
-		time_output = time_interval;
+		time_output = 0.0; // Changed from time_interval to 0.0
 		
 		get_fsiSph_virtualParticles_and_vel(0, 1.0/10.0);
 		while (time < totalTime) {
