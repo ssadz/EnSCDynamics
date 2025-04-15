@@ -52,7 +52,7 @@
 ** 
 ** Name: Predefined Field-1   Type: Velocity
 *Initial Conditions, type=VELOCITY
-Set-1, 1, 0.1
+Set-1, 1, 1.0
 ** ----------------------------------------------------------------
 ** 
 ** STEP: Step-1

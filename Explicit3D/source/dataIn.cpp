@@ -81,12 +81,123 @@ namespace EnSC {
 		k_func["*BULK VISCOSITY"] = &DataIn::BULK_VISCOSITY; // 体积粘性参数
 		k_func["*OUTPUT INTERVAL"] = &DataIn::OUTPUT_INTERVAL; // 自定义输出间隔设置
 		k_func["*OUTPUT"] = &DataIn::OUTPUT;               // Abaqus输出设置
+		k_func["*INSTANCE"] = &DataIn::INSTANCE;           // 部件实例
+		k_func["*END PART"] = &DataIn::END_PART;           // 部件结束标记
+		k_func["*END ASSEMBLY"] = &DataIn::END_ASSEMBLY;   // 装配结束标记
+		k_func["*END STEP"] = &DataIn::END_STEP;           // 步骤结束标记
+		k_func["*END INSTANCE"] = &DataIn::END_INSTANCE;   // 实例结束标记
+	}
+
+	/**
+	 * @brief 从关键字行提取名称
+	 * 
+	 * @param keywordLine 关键字行
+	 * @param prefix 名称前缀（如"NAME="）
+	 * @return 提取的名称，如果未找到则返回空字符串
+	 */
+	std::string DataIn::extractNameFromKeyword(const std::string& keywordLine, const std::string& prefix) {
+		std::string result = "";
+		size_t namePos = keywordLine.find(prefix);
+		if (namePos != std::string::npos) {
+			namePos += prefix.length();
+			size_t endPos = keywordLine.find(",", namePos);
+			if (endPos == std::string::npos) {
+				endPos = keywordLine.length();
+			}
+			result = keywordLine.substr(namePos, endPos - namePos);
+			// 去除可能的空格
+			result.erase(std::remove_if(result.begin(), result.end(), ::isspace), result.end());
+		}
+		return result;
+	}
+
+	/**
+	 * @brief 解析包含实例引用的节点/单元集定义
+	 * 
+	 * @param str 关键字行，包含instance=xxx的定义
+	 * @param setName 输出参数：集合名称
+	 * @param instanceName 输出参数：实例名称
+	 * @return bool 解析是否成功
+	 */
+	bool DataIn::parseSetWithInstance(const std::string& str, std::string& setName, std::string& instanceName) {
+		// 提取集合名称
+		setName = extractNameFromKeyword(str, "NSET=");
+		if (setName.empty()) {
+			setName = extractNameFromKeyword(str, "ELSET=");
+		}
+		
+		// 提取实例名称
+		instanceName = extractNameFromKeyword(str, "INSTANCE=");
+		
+		return !setName.empty();
+	}
+
+	/**
+	 * @brief 处理部件实例
+	 * 
+	 * 解析装配中的部件实例定义
+	 * 
+	 * @return 处理成功返回true
+	 */
+	bool DataIn::INSTANCE() {
+		// 提取实例名称和对应的部件
+		currentInstanceName = extractNameFromKeyword(str, "NAME=");
+		currentInstancePart = extractNameFromKeyword(str, "PART=");
+		
+		std::cout << "定义实例: " << currentInstanceName << "，引用部件: " << currentInstancePart << std::endl;
+		return true;
+	}
+
+	/**
+	 * @brief 处理部件结束标记
+	 * 
+	 * @return 处理成功返回true
+	 */
+	bool DataIn::END_PART() {
+		currentState = ParseState::GLOBAL;
+		std::cout << "结束部件定义: " << currentPartName << std::endl;
+		return true;
+	}
+
+	/**
+	 * @brief 处理装配结束标记
+	 * 
+	 * @return 处理成功返回true
+	 */
+	bool DataIn::END_ASSEMBLY() {
+		currentState = ParseState::GLOBAL;
+		std::cout << "结束装配定义: " << currentAssemblyName << std::endl;
+		return true;
+	}
+
+	/**
+	 * @brief 处理步骤结束标记
+	 * 
+	 * @return 处理成功返回true
+	 */
+	bool DataIn::END_STEP() {
+		currentState = ParseState::GLOBAL;
+		std::cout << "结束步骤定义: " << currentStepName << std::endl;
+		return true;
+	}
+
+	/**
+	 * @brief 处理实例结束标记
+	 * 
+	 * @return 处理成功返回true
+	 */
+	bool DataIn::END_INSTANCE() {
+		currentInstanceName = "";
+		currentInstancePart = "";
+		std::cout << "结束实例定义" << std::endl;
+		return true;
 	}
 
 	/**
 	 * @brief 读取输入文件实现
 	 * 
 	 * 打开并处理输入文件，根据关键字调用对应的处理函数
+	 * 优化为更健壮的解析方式，与Abaqus INP文件结构对应
 	 * 
 	 * @param fileName 输入文件名
 	 */
@@ -101,6 +212,15 @@ namespace EnSC {
 			std::cout << "成功打开文件 " << fileName << "！" << std::endl;
 		}
 
+		// 初始化解析状态和名称
+		currentState = ParseState::GLOBAL;
+		currentPartName = "";
+		currentAssemblyName = "";
+		currentStepName = "";
+		currentMaterialName = "";
+		currentInstanceName = "";
+		currentInstancePart = "";
+
 		// 逐行读取并处理文件内容
 		while (!fin.eof()) {
 			if (fin.peek() == '*') {  // 检查是否是关键字行
@@ -109,11 +229,159 @@ namespace EnSC {
 					char secondChar = str[1];
 					if (secondChar != '*') {  // 忽略注释行（以 ** 开头）
 						toUpperCase(str);  // 转换为大写，方便匹配
+						
+						// 判断主要结构关键字并更新状态
+						if (str.find("*HEADING") != std::string::npos) {
+							// 文件头部，可以跳过或处理特定信息
+							while (fin.peek() != '*' && !fin.eof()) {
+								std::getline(fin, str);  // 跳过heading内容
+							}
+							continue;
+						}
+						else if (str.find("*PART") != std::string::npos) {
+							currentPartName = extractNameFromKeyword(str);
+							currentState = ParseState::PART_DEFINITION;
+							std::cout << "进入部件定义模式: " << currentPartName << std::endl;
+							continue;
+						}
+						else if (str.find("*ASSEMBLY") != std::string::npos) {
+							currentAssemblyName = extractNameFromKeyword(str);
+							if (currentAssemblyName.empty()) {
+								currentAssemblyName = "MainAssembly"; // 默认名称
+							}
+							currentState = ParseState::ASSEMBLY_DEFINITION;
+							std::cout << "进入装配定义模式: " << currentAssemblyName << std::endl;
+							continue;
+						}
+						else if (str.find("*MATERIAL") != std::string::npos) {
+							currentMaterialName = extractNameFromKeyword(str);
+							currentState = ParseState::MATERIAL_DEFINITION;
+							std::cout << "进入材料定义模式: " << currentMaterialName << std::endl;
+							continue;
+						}
+						else if (str.find("*STEP") != std::string::npos) {
+							currentStepName = extractNameFromKeyword(str);
+							if (currentStepName.empty()) {
+								currentStepName = "Step-1"; // 默认名称
+							}
+							currentState = ParseState::STEP_DEFINITION;
+							std::cout << "进入步骤定义模式: " << currentStepName << std::endl;
+							continue;
+						}
+						else if (str.find("*INITIAL CONDITIONS") != std::string::npos) {
+							currentState = ParseState::PREDEFINED_FIELD;
+							std::cout << "进入预定义场模式" << std::endl;
+						}
+						
+						// 直接检查是否有对应的处理函数，包括结束标记和实例定义
+						bool handled = false;
 						for (const auto& pair : k_func) {
 							const std::string& key = pair.first;
-							// 检查 str 是否包含 key 作为子字符串
 							if (str.find(key) != std::string::npos) {
-								k_func[key](this);  // 调用对应的处理函数
+								k_func[key](this);
+								handled = true;
+								break;
+							}
+						}
+						
+						// 如果没有找到直接对应的处理函数，则根据当前状态分类处理
+						if (!handled) {
+							switch (currentState) {
+							case ParseState::GLOBAL:
+								// 全局上下文，无特殊处理
+								break;
+								
+							case ParseState::PART_DEFINITION:
+								// 在部件定义上下文中处理特定关键字
+								if (str.find("*SOLID SECTION") != std::string::npos) {
+									// 处理实体截面定义
+									std::string elset = extractNameFromKeyword(str, "ELSET=");
+									std::string material = extractNameFromKeyword(str, "MATERIAL=");
+									std::cout << "为单元集 " << elset << " 应用材料 " << material << std::endl;
+									
+									// 跳过截面定义行
+									if (fin.peek() != '*' && !fin.eof()) {
+										std::getline(fin, str);
+									}
+								}
+								break;
+								
+							case ParseState::MATERIAL_DEFINITION:
+								// 在材料定义上下文中处理特定关键字
+								if (str.find("*DENSITY") != std::string::npos) {
+									// 读取密度值
+									if (fin.peek() != '*' && !fin.eof()) {
+										std::getline(fin, str);
+										std::istringstream iss(str);
+										Types::Real density;
+										iss >> density;
+										std::cout << "设置材料 " << currentMaterialName << " 的密度: " << density << std::endl;
+										exdyna.mMatElastic.rho = density;
+									}
+								}
+								else if (str.find("*ELASTIC") != std::string::npos) {
+									// 读取弹性参数
+									if (fin.peek() != '*' && !fin.eof()) {
+										std::getline(fin, str);
+										std::istringstream iss(str);
+										std::string token;
+										std::getline(iss, token, ',');
+										Types::Real elasticModulus = convertString<Types::Real>(token);
+										std::getline(iss, token, ',');
+										Types::Real poissonRatio = convertString<Types::Real>(token);
+										
+										std::cout << "设置材料 " << currentMaterialName 
+												  << " 的弹性模量: " << elasticModulus 
+												  << "，泊松比: " << poissonRatio << std::endl;
+										
+										exdyna.mMatElastic.E = elasticModulus;
+										exdyna.mMatElastic.v = poissonRatio;
+										exdyna.mMatElastic.update();  // 更新派生属性
+									}
+								}
+								break;
+								
+							case ParseState::ASSEMBLY_DEFINITION:
+								// 在装配定义上下文中，处理实例中的节点集和单元集
+								// 这里可能需要处理instance引用
+								break;
+								
+							case ParseState::STEP_DEFINITION:
+								// 在步骤定义上下文中，处理输出请求等
+								if (str.find("*RESTART") != std::string::npos) {
+									// 处理重启输出设置
+									while (fin.peek() != '*' && !fin.eof()) {
+										std::getline(fin, str);  // 跳过restart内容
+									}
+								}
+								else if (str.find("*OUTPUT, FIELD") != std::string::npos ||
+										 str.find("*OUTPUT, HISTORY") != std::string::npos) {
+									// 处理场输出或历史输出设置
+									if (str.find("NUMBER INTERVAL=") != std::string::npos) {
+										std::string intervalStr = extractNameFromKeyword(str, "NUMBER INTERVAL=");
+										if (!intervalStr.empty()) {
+											int interval = std::stoi(intervalStr);
+											exdyna.time_interval = exdyna.totalTime / interval;
+											exdyna.time_interval_set = true;
+											std::cout << "从输出设置获取间隔数: " << interval 
+													  << "，设置time_interval=" << exdyna.time_interval << std::endl;
+										}
+									}
+									
+									// 跳过输出变量定义
+									while (fin.peek() != '*' && !fin.eof()) {
+										std::getline(fin, str);
+									}
+								}
+								break;
+								
+							case ParseState::PREDEFINED_FIELD:
+								// 处理预定义场，如初始条件
+								if (str.find("*INITIAL CONDITIONS") != std::string::npos) {
+									if (str.find("TYPE=VELOCITY") != std::string::npos) {
+										INITIAL_VELOCITY();
+									}
+								}
 								break;
 							}
 						}
@@ -127,6 +395,26 @@ namespace EnSC {
 
 		fin.close();
 		std::cout << "成功读取文件 " << fileName << "！" << std::endl;
+		
+		// 更新材料属性，确保在所有数据读取后执行
+		exdyna.mMatElastic.update();
+		
+		// 打印解析统计信息
+		std::cout << "解析完成: " << std::endl;
+		if (!currentPartName.empty()) {
+			std::cout << "- 部件名称: " << currentPartName << std::endl;
+		}
+		if (!currentAssemblyName.empty()) {
+			std::cout << "- 装配名称: " << currentAssemblyName << std::endl;
+		}
+		if (!currentStepName.empty()) {
+			std::cout << "- 步骤名称: " << currentStepName << std::endl;
+		}
+		if (!currentMaterialName.empty()) {
+			std::cout << "- 材料名称: " << currentMaterialName << std::endl;
+		}
+		std::cout << "- 节点数量: " << exdyna.vertices.size() << std::endl;
+		std::cout << "- 单元数量: " << exdyna.hexahedron_elements.size() << std::endl;
 	}
 
 	/**
@@ -284,56 +572,98 @@ namespace EnSC {
 	 * @brief 处理节点集合数据
 	 * 
 	 * 解析输入文件中的节点集合定义，用于后续引用特定的节点组
+	 * 支持处理实例引用，如"instance=Part-1-1"
 	 * 
 	 * @return 处理成功返回true
 	 */
 	bool DataIn::SET_NODE_LIST() {
-		// 从关键字行中提取节点集合名称
-		std::string::size_type pos = str.find("NSET=");
-		pos += 5;
+		// 从关键字行中提取节点集合名称和实例名称（如果有）
 		std::string set_name;
-		while (pos < str.size() && str[pos] != ',' && str[pos] != ' ') {
-			set_name += str[pos++];
+		std::string instance_name;
+		
+		parseSetWithInstance(str, set_name, instance_name);
+		if (set_name.empty()) {
+			set_name = extractNameFromKeyword(str, "NSET=");
 		}
-
+		
+		if (set_name.empty()) {
+			std::cerr << "警告: 无法解析节点集合名称" << std::endl;
+			// 跳过这个节点集合的数据
+			while (fin.peek() != '*' && fin.peek() != EOF) {
+				std::getline(fin, str);
+			}
+			return false;
+		}
+		
 		bool is_generate = false;
 		if (str.find("GENERATE") != std::string::npos) {
 			is_generate = true;
 		}
 
 		// 读取节点集合数据
+		std::vector<std::size_t> set_nodes;
 		while (fin.peek() != '*' && fin.peek() != EOF) {
 			std::getline(fin, str);
-			std::vector<std::size_t> set_nodes;
+			if (str.empty()) continue;
+			
 			std::istringstream iss(str);
+			std::string token;
+			
+			// 读取所有数值，支持逗号或空格分隔
 			while (!iss.eof()) {
-				std::size_t value;
-				iss >> value;
-				set_nodes.push_back(value);
+				// 尝试读取一个值
+				if (iss >> token) {
+					// 处理可能的逗号
+					if (token.back() == ',') {
+						token.pop_back();
+					}
+					
+					// 尝试转换为数值
+					try {
+						std::size_t value = std::stoul(token);
+						set_nodes.push_back(value);
+					}
+					catch (const std::exception& e) {
+						std::cerr << "警告: 解析节点索引时出错: " << token << std::endl;
+					}
+				}
+				
+				// 跳过后续的逗号
 				if (iss.peek() == ',') {
 					iss.ignore();
 				}
 			}
-
-			// 处理生成模式（start,end,step）
-			if (is_generate && set_nodes.size() == 3) {
-				std::size_t start = set_nodes[0];
-				std::size_t end = set_nodes[1];
-				std::size_t step = set_nodes[2];
-				set_nodes.clear();
-				for (std::size_t i = start; i <= end; i += step) {
-					set_nodes.push_back(i);
-				}
-			}
-
-			// 索引从1开始，转换为从0开始
-			for (auto& idx : set_nodes) {
-				idx -= 1;
-			}
-
-			// 存储节点集合
-			exdyna.map_set_node_list[set_name] = set_nodes;
 		}
+
+		// 处理生成模式（start,end,step）
+		if (is_generate && set_nodes.size() >= 2) {
+			std::size_t start = set_nodes[0];
+			std::size_t end = set_nodes[1];
+			std::size_t step = (set_nodes.size() >= 3) ? set_nodes[2] : 1;
+			
+			set_nodes.clear();
+			for (std::size_t i = start; i <= end; i += step) {
+				set_nodes.push_back(i);
+			}
+		}
+
+		// 索引从1开始，转换为从0开始
+		for (auto& idx : set_nodes) {
+			idx -= 1;
+		}
+
+		// 如果有实例名称，加上前缀
+		std::string full_set_name = set_name;
+		if (!instance_name.empty()) {
+			full_set_name = instance_name + "." + set_name;
+			std::cout << "在实例 " << instance_name << " 中定义节点集: " << set_name << " 共 " << set_nodes.size() << " 个节点" << std::endl;
+		} else {
+			std::cout << "定义节点集: " << set_name << " 共 " << set_nodes.size() << " 个节点" << std::endl;
+		}
+
+		// 存储节点集合
+		exdyna.map_set_node_list[full_set_name] = set_nodes;
+		
 		return true;
 	}
 
@@ -376,14 +706,7 @@ namespace EnSC {
 	 */
 	bool DataIn::DLOAD() {
 		// 从关键字行中提取幅值曲线名称
-		std::string amp_name;
-		std::string::size_type pos = str.find("AMPLITUDE=");
-		if (pos != std::string::npos) {
-			pos += 10;
-			while (pos < str.size() && str[pos] != ',' && str[pos] != ' ') {
-				amp_name += str[pos++];
-			}
-		}
+		std::string amp_name = extractNameFromKeyword(str, "AMPLITUDE=");
 		
 		// 读取分布载荷数据
 		while (fin.peek() != '*' && !fin.eof()) {
@@ -510,6 +833,7 @@ namespace EnSC {
 	 * @brief 处理初始速度数据
 	 * 
 	 * 解析输入文件中的初始速度数据，为节点设置初始速度
+	 * 支持处理实例引用和节点集合
 	 */
 	void DataIn::INITIAL_VELOCITY() {
 		// 跳过可能存在的注释行
@@ -519,28 +843,90 @@ namespace EnSC {
 		// 读取初始速度数据
 		while (fin.peek() != '*' && !fin.eof()) {
 			std::getline(fin, str);
+			if (str.empty()) continue;
+			
 			toUpperCase(str);
 			exdyna.ini_vel_generation.emplace_back();
 			std::istringstream iss(str);
 			std::string token;
 
+			// 处理节点引用（节点集合或单个节点）
+			std::string node_ref;
+			std::getline(iss, token, ',');
+			node_ref = token;
+			removeSpaces(node_ref);
+			
+			// 检查是否是节点集引用
+			bool is_set = (node_ref.find("SET-") != std::string::npos || node_ref.find("NSET-") != std::string::npos);
+			
+			// 处理可能的实例前缀，如"Part-1-1.Set-1"
+			std::string instance_name = "";
+			size_t dot_pos = node_ref.find('.');
+			if (dot_pos != std::string::npos) {
+				instance_name = node_ref.substr(0, dot_pos);
+				node_ref = node_ref.substr(dot_pos + 1);
+				std::cout << "引用实例 " << instance_name << " 中的";
+			}
+			
 			// 处理节点集合或单个节点
-			if (str.find("SET-") != std::string::npos) {
+			if (is_set) {
 				// 使用预定义的节点集合
-				std::getline(iss, token, ',');
-				exdyna.ini_vel_generation.back().first = exdyna.map_set_node_list[token];
+				std::string set_name = node_ref;
+				// 构建完整的集合名称（包含实例前缀，如果有）
+				if (!instance_name.empty()) {
+					set_name = instance_name + "." + node_ref;
+				}
+				
+				// 检查节点集是否存在
+				if (exdyna.map_set_node_list.find(set_name) != exdyna.map_set_node_list.end()) {
+					exdyna.ini_vel_generation.back().first = exdyna.map_set_node_list[set_name];
+					std::cout << "为节点集 " << set_name << " 设置初始速度" << std::endl;
+				} else {
+					std::cerr << "警告: 找不到节点集 " << set_name << "，跳过初始速度设置" << std::endl;
+					exdyna.ini_vel_generation.pop_back();
+					continue;
+				}
 			}
 			else {
-				// 单个节点
-				std::getline(iss, token, ',');
-				exdyna.ini_vel_generation.back().first.push_back(std::stoi(token) - 1);
+				// 单个节点，转换索引（从1到0）
+				try {
+					int node_index = std::stoi(node_ref) - 1;
+					exdyna.ini_vel_generation.back().first.push_back(node_index);
+					std::cout << "为节点 " << (node_index + 1) << " 设置初始速度" << std::endl;
+				}
+				catch (const std::exception& e) {
+					std::cerr << "警告: 解析节点索引时出错: " << node_ref << std::endl;
+					exdyna.ini_vel_generation.pop_back();
+					continue;
+				}
 			}
 
 			// 读取自由度索引和速度值
-			std::getline(iss, token, ',');
-			exdyna.ini_vel_generation.back().second.first = std::stoi(token) - 1;  // 自由度索引
-			std::getline(iss, token, ',');
-			exdyna.ini_vel_generation.back().second.second = convertString<Types::Real>(token);  // 速度值
+			try {
+				// 自由度索引
+				if (std::getline(iss, token, ',')) {
+					exdyna.ini_vel_generation.back().second.first = std::stoi(token) - 1;  // 自由度索引（从1到0）
+				} else {
+					// 默认为第一个自由度
+					exdyna.ini_vel_generation.back().second.first = 0;
+				}
+				
+				// 速度值
+				if (std::getline(iss, token, ',')) {
+					exdyna.ini_vel_generation.back().second.second = convertString<Types::Real>(token);
+					std::cout << "  - 自由度: " << (exdyna.ini_vel_generation.back().second.first + 1) 
+					          << ", 速度: " << exdyna.ini_vel_generation.back().second.second << std::endl;
+				} else {
+					// 如果没有指定速度值，默认为0
+					exdyna.ini_vel_generation.back().second.second = 0.0;
+					std::cout << "  - 自由度: " << (exdyna.ini_vel_generation.back().second.first + 1) 
+					          << ", 速度: 0.0 (默认)" << std::endl;
+				}
+			}
+			catch (const std::exception& e) {
+				std::cerr << "警告: 解析速度数据时出错: " << e.what() << std::endl;
+				exdyna.ini_vel_generation.pop_back();
+			}
 		}
 	}
 
@@ -620,13 +1006,16 @@ namespace EnSC {
 
 	}
 
+	/**
+	 * @brief 处理幅值曲线数据
+	 * 
+	 * 解析输入文件中的幅值曲线定义，用于后续引用特定的时间幅值曲线
+	 * 
+	 * @return 处理成功返回true
+	 */
 	bool DataIn::AMP() {
-		std::string::size_type pos = str.find("NAME=");
-		pos += 5;
-		std::string amp_name;
-		while (pos < str.size() && str[pos] != ',' && str[pos] != ' ') {
-			amp_name += str[pos++];
-		}
+		// 从关键字行中提取幅值曲线名称
+		std::string amp_name = extractNameFromKeyword(str);
 
 		while (fin.peek() != '*' && fin.peek() != EOF) {
 			std::getline(fin, str);
@@ -655,121 +1044,212 @@ namespace EnSC {
 		return true;
 	}
 
+	/**
+	 * @brief 处理单元集合数据
+	 * 
+	 * 解析输入文件中的单元集合定义，用于后续引用特定的单元组
+	 * 支持处理实例引用，如"instance=Part-1-1"
+	 * 
+	 * @return 处理成功返回true
+	 */
 	bool DataIn::SET_ELE_LIST() {
-		std::string::size_type pos = str.find("ELSET=");
-		pos += 6;
-		std::string set_ele_name;
-		while (pos < str.size() && str[pos] != ',' && str[pos] != ' ') {
-			set_ele_name += str[pos++];
+		// 从关键字行中提取单元集合名称和实例名称（如果有）
+		std::string set_name;
+		std::string instance_name;
+		
+		parseSetWithInstance(str, set_name, instance_name);
+		if (set_name.empty()) {
+			set_name = extractNameFromKeyword(str, "ELSET=");
+		}
+		
+		if (set_name.empty()) {
+			std::cerr << "警告: 无法解析单元集合名称" << std::endl;
+			// 跳过这个单元集合的数据
+			while (fin.peek() != '*' && fin.peek() != EOF) {
+				std::getline(fin, str);
+			}
+			return false;
 		}
 
+		// 读取单元集合数据
+		std::vector<std::size_t> element_indices;
 		while (fin.peek() != '*' && fin.peek() != EOF) {
 			std::getline(fin, str);
-
-
-			std::istringstream iss(str);
-			std::istringstream iss_c(str);
-			std::string token;
-			std::vector<std::size_t>temp_index_set;
+			if (str.empty()) continue;
+			
+			// 检查是否有特殊关键字
 			if (str.find("EALL") != std::string::npos) {
-				temp_index_set.clear();
+				// 使用所有单元
+				element_indices.clear();
 				for (std::size_t i = 1; i <= exdyna.hexahedron_elements.size(); i++) {
-					temp_index_set.push_back(i);
+					element_indices.push_back(i);
+				}
+				continue;
+			}
+			
+			std::istringstream iss(str);
+			std::string token;
+			std::vector<std::size_t> line_values;
+			
+			// 读取所有数值，支持逗号或空格分隔
+			while (!iss.eof()) {
+				// 尝试读取一个值
+				if (iss >> token) {
+					// 处理可能的逗号
+					if (token.back() == ',') {
+						token.pop_back();
+					}
+					
+					// 尝试转换为数值
+					try {
+						std::size_t value = std::stoul(token);
+						line_values.push_back(value);
+					}
+					catch (const std::exception& e) {
+						std::cerr << "警告: 解析单元索引时出错: " << token << std::endl;
+					}
+				}
+				
+				// 跳过后续的逗号
+				if (iss.peek() == ',') {
+					iss.ignore();
+				}
+			}
+			
+			// 处理当前行的值
+			if (line_values.size() == 3) {
+				// 可能是生成模式 (start, end, step)
+				std::size_t start = line_values[0];
+				std::size_t end = line_values[1];
+				std::size_t step = line_values[2];
+				
+				for (std::size_t i = start; i <= end; i += step) {
+					element_indices.push_back(i);
 				}
 			}
 			else {
-				int N_Real = 0;
-				while (std::getline(iss, token, ',')) {
-					N_Real++;
-				}
-
-				if (N_Real == 1 && 2) {
-					std::getline(iss_c, token, ',');
-					std::size_t index = std::stoi(token);
-
-					temp_index_set.push_back(index);
-					if (N_Real == 2) {
-						std::getline(iss_c, token, ',');
-						index = std::stoi(token);
-						temp_index_set.push_back(index);
-					}
-				}
-
-				if (N_Real == 3) {
-					std::getline(iss_c, token, ',');
-					std::size_t index = std::stoi(token);
-					temp_index_set.push_back(index);
-					std::getline(iss_c, token, ',');
-					index = std::stoi(token);
-					temp_index_set.push_back(index);
-					std::getline(iss_c, token, ',');
-					index = std::stoi(token);
-					temp_index_set.push_back(index);
-
-					std::size_t start = temp_index_set[0];
-					std::size_t end = temp_index_set[1];
-					std::size_t step = temp_index_set[2];
-					temp_index_set.clear();
-					for (std::size_t i = start; i <= end; i += step) {
-						temp_index_set.push_back(i);
-					}
-				}
+				// 普通模式，直接添加所有值
+				element_indices.insert(element_indices.end(), line_values.begin(), line_values.end());
 			}
-			for (auto& idx : temp_index_set) {
-				idx -= 1;
-			}
-			exdyna.map_set_ele_list[set_ele_name] = temp_index_set;
 		}
+
+		// 索引从1开始，转换为从0开始
+		for (auto& idx : element_indices) {
+			idx -= 1;
+		}
+
+		// 如果有实例名称，加上前缀
+		std::string full_set_name = set_name;
+		if (!instance_name.empty()) {
+			full_set_name = instance_name + "." + set_name;
+			std::cout << "在实例 " << instance_name << " 中定义单元集: " << set_name << " 共 " << element_indices.size() << " 个单元" << std::endl;
+		} else {
+			std::cout << "定义单元集: " << set_name << " 共 " << element_indices.size() << " 个单元" << std::endl;
+		}
+
+		// 存储单元集合
+		exdyna.map_set_ele_list[full_set_name] = element_indices;
+		
 		return true;
 	}
 
+	/**
+	 * @brief 处理表面数据
+	 * 
+	 * 解析输入文件中的表面定义，用于后续引用特定的表面
+	 * 支持处理实例引用
+	 * 
+	 * @return 处理成功返回true
+	 */
 	bool DataIn::SURFACE() {
-		std::string::size_type pos = str.find("NAME=");
-		if (pos != std::string::npos) {
-			pos += 5;
-			std::string surf_name;
-			while (pos < str.size() && str[pos] != ',' && str[pos] != ' ') {
-				surf_name += str[pos++];
-			}
-			// 移除 surf_name 中的空格
-			removeSpaces(surf_name);
-
+		// 从关键字行中提取表面名称和实例名称（如果有）
+		std::string surf_name = extractNameFromKeyword(str, "NAME=");
+		std::string instance_name = extractNameFromKeyword(str, "INSTANCE=");
+		
+		// 处理TYPE参数，如果有的话
+		std::string surf_type_global = extractNameFromKeyword(str, "TYPE=");
+		
+		if (surf_name.empty()) {
+			std::cerr << "警告: 无法解析表面名称" << std::endl;
+			// 跳过这个表面定义的数据
 			while (fin.peek() != '*' && fin.peek() != EOF) {
 				std::getline(fin, str);
-				toUpperCase(str);
-				std::istringstream iss(str);
-				std::string token;
-
-				std::getline(iss, token, ',');
-				std::string ele_set_name = token;
-				// 移除 ele_set_name 中的空格
-				removeSpaces(ele_set_name);
-
-				std::getline(iss, token, ',');
-				std::string surf_type = token;
-				// 移除 surf_type 中的空格
-				removeSpaces(surf_type);
-
-				std::pair<std::string, std::string> temp_surf_name_type(ele_set_name, surf_type);
-				exdyna.map_set_surface_list[surf_name] = temp_surf_name_type;
 			}
+			return false;
 		}
+		
+		// 标准化表面名称
+		removeSpaces(surf_name);
+		
+		// 如果有实例名称，加上前缀
+		std::string full_surf_name = surf_name;
+		if (!instance_name.empty()) {
+			full_surf_name = instance_name + "." + surf_name;
+			std::cout << "在实例 " << instance_name << " 中定义表面: " << surf_name << std::endl;
+		} else {
+			std::cout << "定义表面: " << surf_name << std::endl;
+		}
+		
+		// 逐行读取表面定义
+		while (fin.peek() != '*' && fin.peek() != EOF) {
+			std::getline(fin, str);
+			if (str.empty()) continue;
+			
+			toUpperCase(str);
+			std::istringstream iss(str);
+			std::string token;
+			
+			// 读取单元集合引用
+			std::string ele_set_name;
+			std::getline(iss, token, ',');
+			ele_set_name = token;
+			removeSpaces(ele_set_name);
+			
+			// 处理可能的实例前缀，如"Part-1-1.Set-1"
+			std::string element_instance = instance_name;
+			size_t dot_pos = ele_set_name.find('.');
+			if (dot_pos != std::string::npos) {
+				element_instance = ele_set_name.substr(0, dot_pos);
+				ele_set_name = ele_set_name.substr(dot_pos + 1);
+			}
+			
+			// 读取表面类型
+			std::string surf_face_type;
+			std::getline(iss, token, ',');
+			surf_face_type = token;
+			removeSpaces(surf_face_type);
+			
+			// 应用全局表面类型，如果没有指定局部类型的话
+			if (surf_face_type.empty() && !surf_type_global.empty()) {
+				surf_face_type = surf_type_global;
+			}
+			
+			// 使用实例名称构建完整的单元集合名称
+			std::string full_ele_set_name = ele_set_name;
+			if (!element_instance.empty()) {
+				full_ele_set_name = element_instance + "." + ele_set_name;
+			}
+			
+			// 添加到表面映射
+			std::pair<std::string, std::string> surf_definition(full_ele_set_name, surf_face_type);
+			exdyna.map_set_surface_list[full_surf_name] = surf_definition;
+			
+			std::cout << "  - 表面组成: 单元集=" << full_ele_set_name << ", 面类型=" << surf_face_type << std::endl;
+		}
+		
 		return true;
 	}
 
-
+	/**
+	 * @brief 处理分布面载荷数据
+	 * 
+	 * 解析输入文件中的分布面载荷数据
+	 * 
+	 * @return 处理成功返回true
+	 */
 	bool DataIn::DSLOAD() {
-		std::string amp_name;
-		std::string::size_type pos = str.find("AMPLITUDE=");
-		if (pos != std::string::npos) {
-			pos += 10;
-			while (pos < str.size() && str[pos] != ',' && str[pos] != ' ') {
-				amp_name += str[pos++];
-			}
-		}
-
-		// Remove spaces from amp_name
-		removeSpaces(amp_name);
+		// 从关键字行中提取幅值曲线名称
+		std::string amp_name = extractNameFromKeyword(str, "AMPLITUDE=");
 
 		while (fin.peek() != '*' && fin.peek() != EOF) {
 			std::getline(fin, str);
