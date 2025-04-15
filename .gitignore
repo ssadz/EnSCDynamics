@@ -8,3 +8,9 @@ build/
 vcpkg/
 
 ResultData/
+
+eigen/
+
+vcpkg/
+
+VTK_win64/
