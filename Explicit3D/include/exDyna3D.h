@@ -64,8 +64,20 @@ namespace EnSC {
 		bool resetVelBoundary;            // 是否重置了速度边界条件（Boundary, op=NEW, type=VELOCITY)
 		// 需要在调试打印时输出该值
 		
+		// 载荷相关
+		std::tuple<bool, std::string, Types::Real, Types::Real, Types::Real, Types::Real> gravity; // 重力
+		std::vector<std::tuple<std::string, std::string, std::string, Types::Real>> dsload;        // 分布外力
+		bool resetDload;                  // 是否重置了分布载荷（DLOAD, op=NEW)
+		// 需要在调试打印时输出该值
+		bool resetDsload;                 // 是否重置了分布面载荷（DSLOAD, op=NEW)
+		// 需要在调试打印时输出该值
+		
 		// 构造函数，初始化默认值
-		StepData() : timePeriod(0.0), resetSpcBoundary(false), resetVelBoundary(false) {}
+		StepData() : timePeriod(0.0), resetSpcBoundary(false), resetVelBoundary(false), 
+		             resetDload(false), resetDsload(false) {
+			// 初始化gravity元组的第一个元素（使能标志）为false
+			std::get<0>(gravity) = false;
+		}
 		// 其他特定于步骤的数据可以在这里添加
 	};
 
@@ -229,9 +241,7 @@ namespace EnSC {
 		// <<< 新增：体积变化率计算阈值 >>>
 		const Types::Real volRateThreshold = static_cast<Types::Real>(1e-10);
 
-		// --- 重力、边界条件初始化数据 ---
-		std::tuple<bool, std::string, Types::Real, Types::Real, Types::Real, Types::Real> gravity; // 重力
-		std::vector<std::tuple<std::string, std::string, std::string, Types::Real>> dsload;        // 分布外力 (瞬时存储)
+		// --- 初始条件和节点集合数据 ---
 		std::vector<std::pair<std::vector<std::size_t>, std::pair<std::size_t, Types::Real>>> ini_vel_generation; // 初始速度生成节点集合
 		std::map<int, int> mPart_PID_MID;              // Part ID 到 Material ID 映射 (瞬时存储)
 		std::map<std::string, std::vector<std::size_t>> map_set_node_list; // 节点集合到节点数组映射

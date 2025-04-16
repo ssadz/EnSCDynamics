@@ -195,13 +195,20 @@ namespace EnSC {
 			if (currentStep.resetVelBoundary) {
 				std::cout << "本步骤重置了所有速度边界条件 (Boundary, op=NEW, type=VELOCITY)" << std::endl;
 			}
+			if (currentStep.resetDload) {
+				std::cout << "本步骤重置了所有分布载荷 (DLOAD, op=NEW)" << std::endl;
+			}
+			if (currentStep.resetDsload) {
+				std::cout << "本步骤重置了所有分布面载荷 (DSLOAD, op=NEW)" << std::endl;
+			}
 			
 			// 提示关于边界条件继承的情况
 			if (exdyna.steps.size() > 1) {
-				if (!currentStep.resetSpcBoundary && !currentStep.resetVelBoundary) {
-					std::cout << "注意: 在运行时，如果本步骤未定义某类边界条件，将从前一步骤继承" << std::endl;
+				if (!currentStep.resetSpcBoundary && !currentStep.resetVelBoundary &&
+					!currentStep.resetDload && !currentStep.resetDsload) {
+					std::cout << "注意: 在运行时，如果本步骤未定义某类条件，将从前一步骤继承" << std::endl;
 				} else {
-					std::cout << "注意: 本步骤有重置标记，部分边界条件将不会从前面步骤继承" << std::endl;
+					std::cout << "注意: 本步骤有重置标记，部分条件将不会从前面步骤继承" << std::endl;
 				}
 			}
 			
@@ -822,6 +829,23 @@ namespace EnSC {
 	 * @return 处理成功返回true
 	 */
 	bool DataIn::DLOAD() {
+		// 检查是否包含 op=NEW 参数，如果是，则清除当前步骤的相应载荷
+		bool op_new = false;
+		if (str.find("OP=NEW") != std::string::npos) {
+			op_new = true;
+			
+			// 如果在步骤定义中且有步骤数据，则清除当前步骤的分布载荷并设置重置标志
+			if (currentState == ParseState::STEP_DEFINITION && !exdyna.steps.empty()) {
+				// 清除分布载荷
+				std::get<0>(exdyna.steps.back().gravity) = false;
+				exdyna.steps.back().dsload.clear();
+				
+				// 设置重置标志
+				exdyna.steps.back().resetDload = true;
+				std::cout << "清除步骤 " << exdyna.steps.back().name << " 的所有分布载荷 (op=NEW)" << std::endl;
+			}
+		}
+		
 		// 从关键字行中提取幅值曲线名称
 		std::string amp_name = extractNameFromKeyword(str, "AMPLITUDE=");
 		
@@ -1257,13 +1281,21 @@ namespace EnSC {
 		std::getline(iss, token, ',');
 		Types::Real direction_z = convertString<Types::Real>(token);
 
-		std::get<0>(exdyna.gravity) = true;
-		std::get<1>(exdyna.gravity) = amp_name;
-		std::get<2>(exdyna.gravity) = value;
-		std::get<3>(exdyna.gravity) = direction_x;
-		std::get<4>(exdyna.gravity) = direction_y;
-		std::get<5>(exdyna.gravity) = direction_z;
-
+		// 设置重力参数，根据当前解析状态决定存储位置
+		if (currentState == ParseState::STEP_DEFINITION && !exdyna.steps.empty()) {
+			// 存储在当前步骤的gravity中
+			std::get<0>(exdyna.steps.back().gravity) = true;
+			std::get<1>(exdyna.steps.back().gravity) = amp_name;
+			std::get<2>(exdyna.steps.back().gravity) = value;
+			std::get<3>(exdyna.steps.back().gravity) = direction_x;
+			std::get<4>(exdyna.steps.back().gravity) = direction_y;
+			std::get<5>(exdyna.steps.back().gravity) = direction_z;
+			std::cout << "为步骤 " << exdyna.steps.back().name << " 设置重力加速度: " 
+					  << value << " 方向: (" << direction_x << ", " << direction_y << ", " << direction_z << ")" << std::endl;
+		} else {
+			// 否则存储在全局变量中（不应该发生，但作为后备）
+			std::cout << "警告：在步骤外定义重力，这可能导致不一致的行为" << std::endl;
+		}
 	}
 
 	/**
@@ -1499,6 +1531,22 @@ namespace EnSC {
 	 * @return 处理成功返回true
 	 */
 	bool DataIn::DSLOAD() {
+		// 检查是否包含 op=NEW 参数，如果是，则清除当前步骤的相应载荷
+		bool op_new = false;
+		if (str.find("OP=NEW") != std::string::npos) {
+			op_new = true;
+			
+			// 如果在步骤定义中且有步骤数据，则清除当前步骤的分布面载荷并设置重置标志
+			if (currentState == ParseState::STEP_DEFINITION && !exdyna.steps.empty()) {
+				// 清除分布面载荷
+				exdyna.steps.back().dsload.clear();
+				
+				// 设置重置标志
+				exdyna.steps.back().resetDsload = true;
+				std::cout << "清除步骤 " << exdyna.steps.back().name << " 的所有分布面载荷 (op=NEW)" << std::endl;
+			}
+		}
+
 		// 从关键字行中提取幅值曲线名称
 		std::string amp_name = extractNameFromKeyword(str, "AMPLITUDE=");
 
@@ -1518,12 +1566,26 @@ namespace EnSC {
 
 			std::getline(iss, token, ',');
 			Types::Real load_value = convertString<Types::Real>(token);
-			exdyna.dsload.emplace_back();
-
-			std::get<0>(exdyna.dsload.back()) = surf_name;
-			std::get<1>(exdyna.dsload.back()) = load_type;
-			std::get<2>(exdyna.dsload.back()) = amp_name;
-			std::get<3>(exdyna.dsload.back()) = load_value;
+			
+			// 创建新的分布面载荷元组
+			std::tuple<std::string, std::string, std::string, Types::Real> dsload_entry;
+			std::get<0>(dsload_entry) = surf_name;
+			std::get<1>(dsload_entry) = load_type;
+			std::get<2>(dsload_entry) = amp_name;
+			std::get<3>(dsload_entry) = load_value;
+			
+			// 根据当前解析状态决定存储位置
+			if (currentState == ParseState::STEP_DEFINITION && !exdyna.steps.empty()) {
+				// 存储在当前步骤的dsload中
+				exdyna.steps.back().dsload.push_back(dsload_entry);
+				std::cout << "为步骤 " << exdyna.steps.back().name 
+						  << " 添加分布面载荷: 表面=" << surf_name 
+						  << " 类型=" << load_type 
+						  << " 值=" << load_value << std::endl;
+			} else {
+				// 否则存储在全局变量中（不应该发生，但作为后备）
+				std::cout << "警告：在步骤外定义分布面载荷，这可能导致不一致的行为" << std::endl;
+			}
 		}
 		return true;
 	}

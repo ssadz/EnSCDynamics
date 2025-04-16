@@ -44,8 +44,7 @@ namespace EnSC {
 		currentBoundary.spc_nodes.clear();
 		currentBoundary.vel_nodes.clear();
 		
-		// 初始化重力为未激活
-		std::get<0>(gravity) = false;
+		// gravity已经移至StepData结构体中，不再需要在这里初始化
 	}
 
 	exDyna3D::~exDyna3D() {
@@ -70,7 +69,9 @@ namespace EnSC {
 				<< " 约束条件数=" << steps[i].boundary.spc_nodes.size() 
 				<< " 速度条件数=" << steps[i].boundary.vel_nodes.size() 
 				<< " 重置位移边界=" << (steps[i].resetSpcBoundary ? "是" : "否")
-				<< " 重置速度边界=" << (steps[i].resetVelBoundary ? "是" : "否") << std::endl;
+				<< " 重置速度边界=" << (steps[i].resetVelBoundary ? "是" : "否")
+				<< " 重置分布载荷=" << (steps[i].resetDload ? "是" : "否")
+				<< " 重置分布面载荷=" << (steps[i].resetDsload ? "是" : "否") << std::endl;
 		}
 		
 		// 遍历所有步骤进行计算
@@ -797,16 +798,23 @@ namespace EnSC {
 	}
 
 	void exDyna3D::apply_gravity() {
-		if (std::get<0>(gravity) == true) {
+		// 使用当前步骤的gravity
+		if (steps.empty() || currentStepIndex >= steps.size()) {
+			return; // 没有步骤数据，不应用重力
+		}
+		
+		const auto& stepGravity = steps[currentStepIndex].gravity;
+		
+		if (std::get<0>(stepGravity) == true) {
 			Real amp_value = one;
-			if (!std::get<1>(gravity).empty()) {
-				const auto& amp_name = std::get<1>(gravity);
+			if (!std::get<1>(stepGravity).empty()) {
+				const auto& amp_name = std::get<1>(stepGravity);
 				amp_value = deal_amp(amp_name);
 			}
-			const auto& gravity_value = std::get<2>(gravity);
-			const auto& direction_x = std::get<3>(gravity);
-			const auto& direction_y = std::get<4>(gravity);
-			const auto& direction_z = std::get<5>(gravity);
+			const auto& gravity_value = std::get<2>(stepGravity);
+			const auto& direction_x = std::get<3>(stepGravity);
+			const auto& direction_y = std::get<4>(stepGravity);
+			const auto& direction_z = std::get<5>(stepGravity);
 
 #pragma omp parallel for 
 			for (int i = 0; i < solution_a.size(); i += 3) {
@@ -1840,6 +1848,52 @@ namespace EnSC {
 							);
 						}
 						std::cout << "步骤 " << stepIndex << " 的速度约束是所有步骤的累积" << std::endl;
+					}
+				}
+			}
+			
+			// 3. 处理重力载荷继承
+			if (stepData.resetDload) {
+				// 如果当前步骤重置了分布载荷，只使用当前步骤的重力设置
+				std::cout << "步骤 " << stepIndex << " 重置了分布载荷 (op=NEW)，不继承之前的重力设置" << std::endl;
+			} else {
+				// 如果当前步骤没有激活重力但前面步骤有
+				if (!std::get<0>(stepData.gravity)) {
+					// 查找最近的设置了重力的步骤
+					for (int i = stepIndex - 1; i >= 0; i--) {
+						if (std::get<0>(steps[i].gravity) && !steps[i+1].resetDload) {
+							// 找到最近的设置了重力的步骤，继承它的重力设置
+							steps[stepIndex].gravity = steps[i].gravity;
+							std::cout << "步骤 " << stepIndex << " 继承了步骤 " << i << " 的重力设置" << std::endl;
+							break;
+						}
+						// 如果途中有重置标记，则停止查找
+						if (steps[i].resetDload) {
+							break;
+						}
+					}
+				}
+			}
+			
+			// 4. 处理分布面载荷继承
+			if (stepData.resetDsload) {
+				// 如果当前步骤重置了分布面载荷，只使用当前步骤的设置
+				std::cout << "步骤 " << stepIndex << " 重置了分布面载荷 (op=NEW)，不继承之前的分布面载荷" << std::endl;
+			} else {
+				// 如果当前步骤没有分布面载荷但前面步骤有
+				if (stepData.dsload.empty()) {
+					// 查找最近的设置了分布面载荷的步骤
+					for (int i = stepIndex - 1; i >= 0; i--) {
+						if (!steps[i].dsload.empty() && !steps[i+1].resetDsload) {
+							// 找到最近的设置了分布面载荷的步骤，继承它的设置
+							steps[stepIndex].dsload = steps[i].dsload;
+							std::cout << "步骤 " << stepIndex << " 继承了步骤 " << i << " 的分布面载荷" << std::endl;
+							break;
+						}
+						// 如果途中有重置标记，则停止查找
+						if (steps[i].resetDsload) {
+							break;
+						}
 					}
 				}
 			}
