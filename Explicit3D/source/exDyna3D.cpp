@@ -48,41 +48,8 @@ namespace EnSC {
 	void exDyna3D::run() {
 		init();
 		
-		// 如果time_interval为0或未设置，设置为每秒50帧
-		if (time_interval <= 0.0 || !time_interval_set) {
-			if (totalTime <= 0.0) {
-				// 如果totalTime无效，使用默认值
-				time_interval = 1e-2;
-				std::cout << "警告: totalTime无效，使用默认time_interval = " << time_interval << std::endl;
-			} else {
-				// 设置为每秒50帧
-				time_interval = 1.0 / 50.0;
-				
-				// 确保总帧数不少于10帧且不超过1000帧
-				int total_frames = static_cast<int>(totalTime / time_interval) + 1;
-				
-				if (total_frames < 10) {
-					// 如果总帧数少于10，调整为10帧
-					time_interval = totalTime / 10.0;
-					std::cout << "totalTime较小，调整为输出10帧，time_interval = " << time_interval << std::endl;
-				} else if (total_frames > 1000) {
-					// 如果总帧数超过1000，调整为1000帧
-					time_interval = totalTime / 1000.0;
-					std::cout << "totalTime较大，调整为输出1000帧，time_interval = " << time_interval << std::endl;
-				} else {
-					std::cout << "设置time_interval = " << time_interval << "（每秒50帧）" << std::endl;
-				}
-			}
-		}
-		
-		// 确保time_interval不超过totalTime
-		if (time_interval > totalTime && totalTime > 0.0) {
-				time_interval = totalTime;
-				std::cout << "time_interval超过totalTime，已调整为" << time_interval << std::endl;
-		}
-		
-		// 初始化time_output
-		time_output = 0.0; // Changed from time_interval to 0.0
+		// 计算输出时间间隔
+		calculate_time_interval();
 		
 		get_fsiSph_virtualParticles_and_vel(0, 1.0/10.0);
 		
@@ -116,24 +83,19 @@ namespace EnSC {
 
 	// 在 exDyna3D.cpp 中
 	void exDyna3D::init() {
-
+		// 初始化输出时间
+		time_output = 0.0;
+		
 		static bool first_flag = true;
 
 		if (first_flag == true) {
-
 			first_flag = false;
-
 		}
-
 		else {
-
 			return;
-
 		}
 
 		this->read_project_txt();
-
-
 
 		this->init_data();
 
@@ -156,7 +118,6 @@ namespace EnSC {
 		this->update_velocity();
 
 		this->solution_a.setZero();
-
 	}
 
 	void exDyna3D::init_data() {
@@ -1746,5 +1707,44 @@ namespace EnSC {
 		// 其他特定于步骤的设置可以在这里添加
 		
 		std::cout << "Changed to step: " << stepData.name << " with time period: " << stepData.timePeriod << std::endl;
+	}
+
+	/**
+	 * @brief 计算输出时间间隔
+	 * 
+	 * 基于总时间计算合适的输出时间间隔
+	 */
+	void exDyna3D::calculate_time_interval() {
+		if (time_interval <= 0.0 || !time_interval_set) {
+			if (totalTime <= 0.0) {
+				// 如果totalTime无效，使用默认值
+				time_interval = 1e-2;
+				std::cout << "警告: totalTime无效，使用默认time_interval = " << time_interval << std::endl;
+			} else {
+				// 设置为每秒50帧
+				time_interval = 1.0 / 50.0;
+				
+				// 确保总帧数不少于10帧且不超过1000帧
+				int total_frames = static_cast<int>(totalTime / time_interval) + 1;
+				
+				if (total_frames < 10) {
+					// 如果总帧数少于10，调整为10帧
+					time_interval = totalTime / 10.0;
+					std::cout << "totalTime较小，调整为输出10帧，time_interval = " << time_interval << std::endl;
+				} else if (total_frames > 1000) {
+					// 如果总帧数超过1000，调整为1000帧
+					time_interval = totalTime / 1000.0;
+					std::cout << "totalTime较大，调整为输出1000帧，time_interval = " << time_interval << std::endl;
+				} else {
+					std::cout << "设置time_interval = " << time_interval << "（每秒50帧）" << std::endl;
+				}
+			}
+		}
+		
+		// 确保time_interval不超过totalTime
+		if (time_interval > totalTime && totalTime > 0.0) {
+			time_interval = totalTime;
+			std::cout << "time_interval超过totalTime，已调整为" << time_interval << std::endl;
+		}
 	}
 }

@@ -86,6 +86,8 @@ namespace EnSC {
 		// --- FSI 共享数据 (允许外部访问/修改) ---
 		FSI_share_data fsi_share_data;
 
+		void calculate_time_interval(); // 计算输出时间间隔
+
 	protected:
 		// --- 初始化相关方法 ---
 		virtual void init_data();           // 初始化数据结构，分配大小
