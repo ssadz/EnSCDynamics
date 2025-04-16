@@ -764,10 +764,23 @@ namespace EnSC {
 			isEmptyBoundaryCommand = true;
 			
 			// 即使是空命令，也需要记录已经处理过对应类型的重置操作
-			if (str.find("TYPE=VELOCITY") != std::string::npos) {
-				std::cout << "遇到空的速度边界条件命令: " << str << " (仅执行重置操作)" << std::endl;
+			if (op_new && currentState == ParseState::STEP_DEFINITION && !exdyna.steps.empty()) {
+				// 根据是否有velocity类型参数设置对应的重置标志
+				if (str.find("TYPE=VELOCITY") != std::string::npos) {
+					exdyna.steps.back().resetVelBoundary = true;
+					std::cout << "遇到空的速度边界条件命令: " << str << " (仅执行重置操作)" << std::endl;
+					std::cout << "为步骤 " << exdyna.steps.back().name << " 设置速度边界重置标志" << std::endl;
+				} else {
+					exdyna.steps.back().resetSpcBoundary = true;
+					std::cout << "遇到空的位移边界条件命令: " << str << " (仅执行重置操作)" << std::endl;
+					std::cout << "为步骤 " << exdyna.steps.back().name << " 设置位移边界重置标志" << std::endl;
+				}
 			} else {
-				std::cout << "遇到空的位移边界条件命令: " << str << " (仅执行重置操作)" << std::endl;
+				if (str.find("TYPE=VELOCITY") != std::string::npos) {
+					std::cout << "遇到空的速度边界条件命令: " << str << " (未执行重置操作)" << std::endl;
+				} else {
+					std::cout << "遇到空的位移边界条件命令: " << str << " (未执行重置操作)" << std::endl;
+				}
 			}
 		}
 		

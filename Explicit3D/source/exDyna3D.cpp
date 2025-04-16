@@ -68,7 +68,9 @@ namespace EnSC {
 			std::cout << "步骤 " << i << ": " << steps[i].name 
 				<< " 时间周期=" << steps[i].timePeriod 
 				<< " 约束条件数=" << steps[i].boundary.spc_nodes.size() 
-				<< " 速度条件数=" << steps[i].boundary.vel_nodes.size() << std::endl;
+				<< " 速度条件数=" << steps[i].boundary.vel_nodes.size() 
+				<< " 重置位移边界=" << (steps[i].resetSpcBoundary ? "是" : "否")
+				<< " 重置速度边界=" << (steps[i].resetVelBoundary ? "是" : "否") << std::endl;
 		}
 		
 		// 遍历所有步骤进行计算

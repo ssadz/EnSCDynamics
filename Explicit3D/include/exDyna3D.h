@@ -60,7 +60,9 @@ namespace EnSC {
 		Types::Real timePeriod;           // 时间周期
 		BoundaryCondition boundary;       // 边界条件
 		bool resetSpcBoundary;            // 是否重置了位移边界条件（Boundary, op=NEW)
+		// 需要在调试打印时输出该值
 		bool resetVelBoundary;            // 是否重置了速度边界条件（Boundary, op=NEW, type=VELOCITY)
+		// 需要在调试打印时输出该值
 		
 		// 构造函数，初始化默认值
 		StepData() : timePeriod(0.0), resetSpcBoundary(false), resetVelBoundary(false) {}
