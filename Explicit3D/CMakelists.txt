@@ -6,8 +6,14 @@
 # 查找 OpenMP
 find_package(OpenMP QUIET)
 if(OpenMP_CXX_FOUND)
-    message(STATUS "找到 OpenMP 支持 (版本: ${OpenMP_CXX_VERSION})")
-    set(PROJECT_USE_OPENMP TRUE)
+    # 仅在非Debug模式下启用OpenMP
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        message(STATUS "Debug模式下禁用OpenMP以便于调试")
+        set(PROJECT_USE_OPENMP FALSE)
+    else()
+        message(STATUS "找到 OpenMP 支持 (版本: ${OpenMP_CXX_VERSION})")
+        set(PROJECT_USE_OPENMP TRUE)
+    endif()
 else()
     message(WARNING "未找到 OpenMP 支持。如果需要，请确保已安装并配置好 OpenMP 运行时，或者检查 Clang 安装是否完整。多线程加速将不可用。")
     set(PROJECT_USE_OPENMP FALSE)
@@ -66,6 +72,10 @@ target_link_libraries(Explicit3D PUBLIC
 if(PROJECT_USE_OPENMP)
     target_link_libraries(Explicit3D PUBLIC OpenMP::OpenMP_CXX)
     message(STATUS "已为目标 Explicit3D 链接 OpenMP。")
+else()
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        message(STATUS "Debug模式下已禁用OpenMP，这将有助于更简单的调试过程。")
+    endif()
 endif()
 
 # 导出变量到父 CMake 作用域

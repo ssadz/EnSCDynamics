@@ -48,6 +48,9 @@ namespace EnSC {
 	void exDyna3D::run() {
 		init();
 		
+		// 调试：打印set信息
+		printSetInfo();
+		
 		// 计算输出时间间隔
 		calculate_time_interval();
 		
@@ -1699,13 +1702,31 @@ namespace EnSC {
 		
 		// 获取当前步骤数据
 		const auto& stepData = steps[stepIndex];
-		
-		// 更新边界条件
-		boundary_spc_node = stepData.boundary_spc_node;
-		boundary_vel_node = stepData.boundary_vel_node;
-		
+
+		// --- 边界条件继承逻辑 ---
+		if (stepIndex == 0) {
+			// 第一步，直接用自身
+			boundary_spc_node = stepData.boundary_spc_node;
+			boundary_vel_node = stepData.boundary_vel_node;
+			prev_boundary_spc_node = boundary_spc_node;
+			prev_boundary_vel_node = boundary_vel_node;
+		} else {
+			// 继承逻辑
+			if (stepData.boundary_spc_node.empty()) {
+				boundary_spc_node = prev_boundary_spc_node;
+			} else {
+				boundary_spc_node = stepData.boundary_spc_node;
+			}
+			if (stepData.boundary_vel_node.empty()) {
+				boundary_vel_node = prev_boundary_vel_node;
+			} else {
+				boundary_vel_node = stepData.boundary_vel_node;
+			}
+			// 更新prev为本step实际生效的
+			prev_boundary_spc_node = boundary_spc_node;
+			prev_boundary_vel_node = boundary_vel_node;
+		}
 		// 其他特定于步骤的设置可以在这里添加
-		
 		std::cout << "Changed to step: " << stepData.name << " with time period: " << stepData.timePeriod << std::endl;
 	}
 
@@ -1746,5 +1767,28 @@ namespace EnSC {
 			time_interval = totalTime;
 			std::cout << "time_interval超过totalTime，已调整为" << time_interval << std::endl;
 		}
+	}
+
+	// 新增：调试打印set信息
+	void exDyna3D::printSetInfo() {
+		std::cout << "\n==== 节点集 (Node Sets) ====" << std::endl;
+		for (const auto& pair : map_set_node_list) {
+			std::cout << "节点集: " << pair.first << " 包含 " << pair.second.size() << " 个节点: ";
+			for (size_t i = 0; i < pair.second.size(); ++i) {
+				std::cout << pair.second[i];
+				if (i != pair.second.size() - 1) std::cout << ", ";
+			}
+			std::cout << std::endl;
+		}
+		std::cout << "\n==== 单元集 (Element Sets) ====" << std::endl;
+		for (const auto& pair : map_set_ele_list) {
+			std::cout << "单元集: " << pair.first << " 包含 " << pair.second.size() << " 个单元: ";
+			for (size_t i = 0; i < pair.second.size(); ++i) {
+				std::cout << pair.second[i];
+				if (i != pair.second.size() - 1) std::cout << ", ";
+			}
+			std::cout << std::endl;
+		}
+		std::cout << "============================\n" << std::endl;
 	}
 }

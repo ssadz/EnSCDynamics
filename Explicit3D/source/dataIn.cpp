@@ -279,12 +279,16 @@ namespace EnSC {
 								currentStepName = "Step-" + std::to_string(exdyna.steps.size() + 1); // 默认名称
 							}
 							currentState = ParseState::STEP_DEFINITION;
-							
 							// 创建新的步骤数据
 							StepData stepData;
 							stepData.name = currentStepName;
+							// --- 新增：边界条件继承 ---
+							if (!exdyna.steps.empty()) {
+								// 继承上一个step的边界条件（只有新step未指定时才会生效）
+								stepData.boundary_spc_node = exdyna.steps.back().boundary_spc_node;
+								stepData.boundary_vel_node = exdyna.steps.back().boundary_vel_node;
+							}
 							exdyna.steps.push_back(stepData);
-							
 							std::cout << "进入步骤定义模式: " << currentStepName << std::endl;
 							continue;
 						}
@@ -672,17 +676,9 @@ namespace EnSC {
 			idx -= 1;
 		}
 
-		// 如果有实例名称，加上前缀
-		std::string full_set_name = set_name;
-		if (!instance_name.empty()) {
-			full_set_name = instance_name + "." + set_name;
-			std::cout << "在实例 " << instance_name << " 中定义节点集: " << set_name << " 共 " << set_nodes.size() << " 个节点" << std::endl;
-		} else {
-			std::cout << "定义节点集: " << set_name << " 共 " << set_nodes.size() << " 个节点" << std::endl;
-		}
-
-		// 存储节点集合
-		exdyna.map_set_node_list[full_set_name] = set_nodes;
+		// 只用set_name，不拼接instance前缀，后读覆盖前读
+		std::cout << "定义节点集: " << set_name << " 共 " << set_nodes.size() << " 个节点" << std::endl;
+		exdyna.map_set_node_list[set_name] = set_nodes;
 		
 		return true;
 	}
@@ -1157,7 +1153,6 @@ namespace EnSC {
 			
 			// 检查是否有特殊关键字
 			if (str.find("EALL") != std::string::npos) {
-				// 使用所有单元
 				element_indices.clear();
 				for (std::size_t i = 1; i <= exdyna.hexahedron_elements.size(); i++) {
 					element_indices.push_back(i);
@@ -1216,17 +1211,9 @@ namespace EnSC {
 			idx -= 1;
 		}
 
-		// 如果有实例名称，加上前缀
-		std::string full_set_name = set_name;
-		if (!instance_name.empty()) {
-			full_set_name = instance_name + "." + set_name;
-			std::cout << "在实例 " << instance_name << " 中定义单元集: " << set_name << " 共 " << element_indices.size() << " 个单元" << std::endl;
-		} else {
-			std::cout << "定义单元集: " << set_name << " 共 " << element_indices.size() << " 个单元" << std::endl;
-		}
-
-		// 存储单元集合
-		exdyna.map_set_ele_list[full_set_name] = element_indices;
+		// 只用set_name，不拼接instance前缀，后读覆盖前读
+		std::cout << "定义单元集: " << set_name << " 共 " << element_indices.size() << " 个单元" << std::endl;
+		exdyna.map_set_ele_list[set_name] = element_indices;
 		
 		return true;
 	}

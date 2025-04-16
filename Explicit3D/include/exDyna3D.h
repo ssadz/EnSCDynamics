@@ -88,6 +88,9 @@ namespace EnSC {
 
 		void calculate_time_interval(); // 计算输出时间间隔
 
+		// 新增：调试打印set信息
+		void printSetInfo();
+
 	protected:
 		// --- 初始化相关方法 ---
 		virtual void init_data();           // 初始化数据结构，分配大小
@@ -242,6 +245,10 @@ namespace EnSC {
 		// --- 新增变量 ---
 		std::size_t currentStepIndex; // 新增变量：当前时间步骤索引
 		std::vector<StepData> steps;  // 新增变量：所有步骤的数据
+
+		// --- 新增：用于边界条件继承的上一步边界条件缓存 ---
+		std::vector<std::pair<std::vector<std::size_t>, std::array<std::size_t, 3>>> prev_boundary_spc_node; // 上一步位移约束
+		std::vector<std::pair<std::vector<std::size_t>, std::pair<std::array<std::size_t, 2>, Types::Real>>> prev_boundary_vel_node; // 上一步速度约束
 
 	};
 
