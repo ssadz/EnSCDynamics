@@ -431,9 +431,11 @@ Set-2, PINNED
 ** 
 ** BOUNDARY CONDITIONS
 ** 
+** Name: BC-1 Type: Symmetry/Antisymmetry/Encastre
+*Boundary, op=NEW
 ** Name: BC-2 Type: Velocity/Angular velocity
-*Boundary, type=VELOCITY
-Set-3, 2, 2, 1.
+*Boundary, op=NEW, type=VELOCITY
+Set-3, 2, 2, 0.1
 ** 
 ** OUTPUT REQUESTS
 ** 

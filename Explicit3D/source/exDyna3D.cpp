@@ -79,6 +79,36 @@ namespace EnSC {
 			// 设置当前步骤
 			setCurrentStep(stepIndex);
 			
+			// 打印当前步骤的约束信息（包括继承的约束）
+			std::cout << "---- 当前步骤约束信息 ----" << std::endl;
+			
+			// 计算受约束的总节点数
+			size_t total_spc_nodes = 0;
+			for (const auto& spc : currentBoundary.spc_nodes) {
+				total_spc_nodes += spc.first.size();
+			}
+			
+			size_t total_vel_nodes = 0;
+			for (const auto& vel : currentBoundary.vel_nodes) {
+				total_vel_nodes += vel.first.size();
+			}
+			
+			std::cout << "固定约束数量: " << currentBoundary.spc_nodes.size() 
+				  << " (涉及 " << total_spc_nodes << " 个节点)" << std::endl;
+			std::cout << "速度约束数量: " << currentBoundary.vel_nodes.size() 
+				  << " (涉及 " << total_vel_nodes << " 个节点)" << std::endl;
+			
+			// 标记是否有继承的约束
+			if (stepIndex > 0) {
+				if (stepData.boundary.spc_nodes.empty() && !currentBoundary.spc_nodes.empty()) {
+					std::cout << "固定约束继承自前一步" << std::endl;
+				}
+				if (stepData.boundary.vel_nodes.empty() && !currentBoundary.vel_nodes.empty()) {
+					std::cout << "速度约束继承自前一步" << std::endl;
+				}
+			}
+			std::cout << "-------------------------" << std::endl;
+			
 			// 设置步骤的结束时间
 			Types::Real stepEndTime = time + stepData.timePeriod;
 			
@@ -1706,21 +1736,110 @@ namespace EnSC {
 		if (stepIndex == 0) {
 			// 第一步，直接用自身
 			currentBoundary = stepData.boundary;
+			std::cout << "步骤 0: 使用自身定义的边界条件" << std::endl;
 		} else {
-			// 继承逻辑 - 从当前步骤和前一步骤获取边界条件
-			const auto& prevStepData = steps[stepIndex - 1];
+			// 需要检查继承链，找到边界条件重置的最近步骤
 			
-			// 如果当前步骤某类型边界条件为空，则继承前一步骤的
-			if (stepData.boundary.spc_nodes.empty()) {
-				currentBoundary.spc_nodes = prevStepData.boundary.spc_nodes;
-			} else {
+			// 1. 处理位移边界条件
+			if (stepData.resetSpcBoundary) {
+				// 如果当前步骤重置了位移边界条件，只使用当前步骤的约束
 				currentBoundary.spc_nodes = stepData.boundary.spc_nodes;
+				std::cout << "步骤 " << stepIndex << " 重置了位移约束 (op=NEW)，不继承之前的位移约束" << std::endl;
+			} else {
+				// 查找边界条件重置的最近步骤
+				bool found_reset = false;
+				for (int i = stepIndex - 1; i >= 0; i--) {
+					if (steps[i].resetSpcBoundary) {
+						// 找到最近的重置步骤，应该使用该步骤及之后的所有位移约束
+						found_reset = true;
+						currentBoundary.spc_nodes.clear();
+						
+						// 合并从重置步骤到当前步骤的所有约束
+						for (int j = i; j <= stepIndex; j++) {
+							currentBoundary.spc_nodes.insert(
+								currentBoundary.spc_nodes.end(),
+								steps[j].boundary.spc_nodes.begin(),
+								steps[j].boundary.spc_nodes.end()
+							);
+						}
+						
+						std::cout << "步骤 " << stepIndex << " 的位移约束来自步骤 " << i << " 到 " << stepIndex 
+							<< " 的累积 (步骤 " << i << " 有 op=NEW)" << std::endl;
+						break;
+					}
+				}
+				
+				// 如果没有找到重置步骤，则继承所有之前步骤的约束
+				if (!found_reset) {
+					if (stepData.boundary.spc_nodes.empty()) {
+						// 如果当前步骤没有定义位移约束，则使用上一步的约束
+						const auto& prevStepData = steps[stepIndex - 1];
+						currentBoundary.spc_nodes = prevStepData.boundary.spc_nodes;
+						std::cout << "步骤 " << stepIndex << " 继承了步骤 " << (stepIndex - 1) << " 的位移约束" << std::endl;
+					} else {
+						// 合并所有之前步骤的约束
+						currentBoundary.spc_nodes.clear();
+						for (int i = 0; i <= stepIndex; i++) {
+							currentBoundary.spc_nodes.insert(
+								currentBoundary.spc_nodes.end(),
+								steps[i].boundary.spc_nodes.begin(),
+								steps[i].boundary.spc_nodes.end()
+							);
+						}
+						std::cout << "步骤 " << stepIndex << " 的位移约束是所有步骤的累积" << std::endl;
+					}
+				}
 			}
 			
-			if (stepData.boundary.vel_nodes.empty()) {
-				currentBoundary.vel_nodes = prevStepData.boundary.vel_nodes;
-			} else {
+			// 2. 处理速度边界条件
+			if (stepData.resetVelBoundary) {
+				// 如果当前步骤重置了速度边界条件，只使用当前步骤的约束
 				currentBoundary.vel_nodes = stepData.boundary.vel_nodes;
+				std::cout << "步骤 " << stepIndex << " 重置了速度约束 (op=NEW, type=VELOCITY)，不继承之前的速度约束" << std::endl;
+			} else {
+				// 查找边界条件重置的最近步骤
+				bool found_reset = false;
+				for (int i = stepIndex - 1; i >= 0; i--) {
+					if (steps[i].resetVelBoundary) {
+						// 找到最近的重置步骤，应该使用该步骤及之后的所有速度约束
+						found_reset = true;
+						currentBoundary.vel_nodes.clear();
+						
+						// 合并从重置步骤到当前步骤的所有约束
+						for (int j = i; j <= stepIndex; j++) {
+							currentBoundary.vel_nodes.insert(
+								currentBoundary.vel_nodes.end(),
+								steps[j].boundary.vel_nodes.begin(),
+								steps[j].boundary.vel_nodes.end()
+							);
+						}
+						
+						std::cout << "步骤 " << stepIndex << " 的速度约束来自步骤 " << i << " 到 " << stepIndex 
+							<< " 的累积 (步骤 " << i << " 有 op=NEW, type=VELOCITY)" << std::endl;
+						break;
+					}
+				}
+				
+				// 如果没有找到重置步骤，则继承所有之前步骤的约束
+				if (!found_reset) {
+					if (stepData.boundary.vel_nodes.empty()) {
+						// 如果当前步骤没有定义速度约束，则使用上一步的约束
+						const auto& prevStepData = steps[stepIndex - 1];
+						currentBoundary.vel_nodes = prevStepData.boundary.vel_nodes;
+						std::cout << "步骤 " << stepIndex << " 继承了步骤 " << (stepIndex - 1) << " 的速度约束" << std::endl;
+					} else {
+						// 合并所有之前步骤的约束
+						currentBoundary.vel_nodes.clear();
+						for (int i = 0; i <= stepIndex; i++) {
+							currentBoundary.vel_nodes.insert(
+								currentBoundary.vel_nodes.end(),
+								steps[i].boundary.vel_nodes.begin(),
+								steps[i].boundary.vel_nodes.end()
+							);
+						}
+						std::cout << "步骤 " << stepIndex << " 的速度约束是所有步骤的累积" << std::endl;
+					}
+				}
 			}
 		}
 		

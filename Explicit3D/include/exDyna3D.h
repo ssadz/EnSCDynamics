@@ -59,6 +59,11 @@ namespace EnSC {
 		std::string name;                 // 步骤名称
 		Types::Real timePeriod;           // 时间周期
 		BoundaryCondition boundary;       // 边界条件
+		bool resetSpcBoundary;            // 是否重置了位移边界条件（Boundary, op=NEW)
+		bool resetVelBoundary;            // 是否重置了速度边界条件（Boundary, op=NEW, type=VELOCITY)
+		
+		// 构造函数，初始化默认值
+		StepData() : timePeriod(0.0), resetSpcBoundary(false), resetVelBoundary(false) {}
 		// 其他特定于步骤的数据可以在这里添加
 	};
 

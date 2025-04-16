@@ -188,9 +188,21 @@ namespace EnSC {
 			std::cout << "本步骤定义的固定约束节点条件数: " << currentStep.boundary.spc_nodes.size() << std::endl;
 			std::cout << "本步骤定义的速度约束节点条件数: " << currentStep.boundary.vel_nodes.size() << std::endl;
 			
+			// 打印重置标记信息
+			if (currentStep.resetSpcBoundary) {
+				std::cout << "本步骤重置了所有位移边界条件 (Boundary, op=NEW)" << std::endl;
+			}
+			if (currentStep.resetVelBoundary) {
+				std::cout << "本步骤重置了所有速度边界条件 (Boundary, op=NEW, type=VELOCITY)" << std::endl;
+			}
+			
 			// 提示关于边界条件继承的情况
 			if (exdyna.steps.size() > 1) {
-				std::cout << "注意: 在运行时，如果本步骤未定义某类边界条件，将从前一步骤继承" << std::endl;
+				if (!currentStep.resetSpcBoundary && !currentStep.resetVelBoundary) {
+					std::cout << "注意: 在运行时，如果本步骤未定义某类边界条件，将从前一步骤继承" << std::endl;
+				} else {
+					std::cout << "注意: 本步骤有重置标记，部分边界条件将不会从前面步骤继承" << std::endl;
+				}
 			}
 			
 			std::cout << "------------------------------------------------" << std::endl;
@@ -249,6 +261,10 @@ namespace EnSC {
 					char secondChar = str[1];
 					if (secondChar != '*') {  // 忽略注释行（以 ** 开头）
 						toUpperCase(str);  // 转换为大写，方便匹配
+						std::cout << "处理关键字行: " << str << std::endl;  // 添加调试输出
+						
+						// 用于控制循环流程的变量
+						bool continue_main_loop = false;
 						
 						// 判断主要结构关键字并更新状态
 						if (str.find("*HEADING") != std::string::npos) {
@@ -376,6 +392,17 @@ namespace EnSC {
 								break;
 								
 							case ParseState::STEP_DEFINITION:
+								// 特殊处理*BOUNDARY命令，以确保连续的边界命令能够被单独处理
+								if (str.find("*BOUNDARY") != std::string::npos) {
+									std::cout << "**特殊处理步骤内边界条件命令: " << str << std::endl;
+									BOUNDARY();  // 直接调用处理函数
+									std::cout << "**步骤内边界条件命令处理完成" << std::endl;
+									// 继续外部循环，跳过其他处理
+									handled = true;  // 标记为已处理
+									continue_main_loop = true;  // 设置一个标志，指示应该继续主循环
+									break;  // 跳出switch
+								}
+								
 								// 在步骤定义上下文中，处理输出请求等
 								if (str.find("*RESTART") != std::string::npos) {
 									// 处理重启输出设置
@@ -413,6 +440,11 @@ namespace EnSC {
 								}
 								break;
 							}
+						}
+						
+						// 如果设置了continue_main_loop标志，则跳过后续处理，直接进入下一次循环
+						if (continue_main_loop) {
+							continue;
 						}
 					}
 				}
@@ -689,14 +721,65 @@ namespace EnSC {
 	}
 
 	bool DataIn::BOUNDARY() {
-		if (str.find("TYPE") != std::string::npos) {
-			if (str.find("VELOCITY") != std::string::npos) {
-				VELOCITY_NODE();
+		// 检查是否包含 op=NEW 参数，如果是，则清除当前步骤的相应边界条件
+		bool op_new = false;
+		if (str.find("OP=NEW") != std::string::npos) {
+			op_new = true;
+			
+			// 如果在步骤定义中且有步骤数据，则清除当前步骤的相应边界条件并设置重置标志
+			if (currentState == ParseState::STEP_DEFINITION && !exdyna.steps.empty()) {
+				// 根据边界条件类型（位移或速度）决定清除哪种边界条件
+				if (str.find("TYPE=VELOCITY") != std::string::npos) {
+					exdyna.steps.back().boundary.vel_nodes.clear();
+					// 设置重置标志，表示本步骤重置了速度边界条件
+					exdyna.steps.back().resetVelBoundary = true;
+					std::cout << "清除步骤 " << exdyna.steps.back().name << " 的所有速度边界条件 (op=NEW)" << std::endl;
+				} else {
+					exdyna.steps.back().boundary.spc_nodes.clear();
+					// 设置重置标志，表示本步骤重置了位移边界条件
+					exdyna.steps.back().resetSpcBoundary = true;
+					std::cout << "清除步骤 " << exdyna.steps.back().name << " 的所有位移边界条件 (op=NEW)" << std::endl;
+				}
+			} else {
+				// 如果不在步骤定义中，则清除全局边界条件
+				if (str.find("TYPE=VELOCITY") != std::string::npos) {
+					exdyna.currentBoundary.vel_nodes.clear();
+					std::cout << "清除所有全局速度边界条件 (op=NEW)" << std::endl;
+				} else {
+					exdyna.currentBoundary.spc_nodes.clear();
+					std::cout << "清除所有全局位移边界条件 (op=NEW)" << std::endl;
+				}
 			}
 		}
-		else {
-			SPC_NODE();
+
+		// 处理不同类型的边界条件
+		// 注意：当未指定type参数时（即 *Boundary 或 *Boundary, op=NEW 命令没有type参数），
+		// 默认按SPC（位移）边界条件处理，调用SPC_NODE()方法
+		
+		// 检查当前命令行是否为单独的边界条件命令而没有后续数据
+		// 这种情况在有连续的*Boundary命令时可能发生
+		bool isEmptyBoundaryCommand = false;
+		if (fin.peek() == '*') {
+			// 下一行又是一个新的关键字，表示当前的*Boundary命令没有数据行
+			isEmptyBoundaryCommand = true;
+			
+			// 即使是空命令，也需要记录已经处理过对应类型的重置操作
+			if (str.find("TYPE=VELOCITY") != std::string::npos) {
+				std::cout << "遇到空的速度边界条件命令: " << str << " (仅执行重置操作)" << std::endl;
+			} else {
+				std::cout << "遇到空的位移边界条件命令: " << str << " (仅执行重置操作)" << std::endl;
+			}
 		}
+		
+		// 只有当不是空的边界条件命令时，才调用相应的处理函数
+		if (!isEmptyBoundaryCommand) {
+			if (str.find("TYPE=VELOCITY") != std::string::npos) {
+				VELOCITY_NODE();
+			} else {
+				SPC_NODE();
+			}
+		}
+		
 		return true;
 	}
 
@@ -811,11 +894,21 @@ namespace EnSC {
 		while (fin.peek() == '*')
 			std::getline(fin, str);
 
+		// 如果下一行是另一个关键字（以*开头），表示这是一个纯粹的清除操作
+		// 这种情况下，我们已经在BOUNDARY方法中处理了op=NEW参数，所以可以直接返回
+		if (fin.peek() == '*') {
+			std::cout << "位移边界条件已清除，无新添加的约束" << std::endl;
+			return;
+		}
+
+		std::cout << "开始处理位移边界条件数据..." << std::endl;
+		
 		// 读取单点约束数据
 		while (fin.peek() != '*' && !fin.eof()) {
 			std::getline(fin, str);
 			toUpperCase(str);
-            
+            std::cout << "  解析位移边界行: " << str << std::endl;
+			
 			// 创建临时约束数据
 			std::pair<std::vector<std::size_t>, std::array<std::size_t, 3>> boundary_data;
 			std::istringstream iss(str);
@@ -825,34 +918,52 @@ namespace EnSC {
 			if (str.find("SET-") != std::string::npos) {
 				// 使用预定义的节点集合
 				std::getline(iss, token, ',');
-				boundary_data.first = exdyna.map_set_node_list[token];
+				std::cout << "  使用节点集: " << token << std::endl;
+				
+				// 检查节点集是否存在
+				if (exdyna.map_set_node_list.find(token) != exdyna.map_set_node_list.end()) {
+					boundary_data.first = exdyna.map_set_node_list[token];
+				} else {
+					std::cerr << "  警告: 找不到节点集 " << token << std::endl;
+					continue; // 跳过这一行
+				}
 			}
 			else {
 				// 单个节点
 				std::getline(iss, token, ',');
-				boundary_data.first.push_back(std::stoi(token));
+				std::cout << "  使用单个节点: " << token << std::endl;
+				try {
+					boundary_data.first.push_back(std::stoi(token) - 1);
+				} catch (const std::exception& e) {
+					std::cerr << "  警告: 解析节点索引出错: " << e.what() << std::endl;
+					continue; // 跳过这一行
+				}
 			}
 
 			// 处理特殊约束类型
 			if (str.find("PINNED") != std::string::npos || str.find("ENCASTRE") != std::string::npos) {
+				std::cout << "  使用特殊约束类型: " << (str.find("PINNED") != std::string::npos ? "PINNED" : "ENCASTRE") << std::endl;
 				boundary_data.second.at(0) = 0;  // 起始自由度
 				boundary_data.second.at(1) = 2;  // 结束自由度
 				boundary_data.second.at(2) = 1;  // 增量
 			}
 			else if (str.find("XSYMM") != std::string::npos) {
 				// X对称：约束X方向位移
+				std::cout << "  使用特殊约束类型: XSYMM (X对称)" << std::endl;
 				boundary_data.second.at(0) = 0;  // X方向 (第1个自由度)
 				boundary_data.second.at(1) = 0;  // 仅X方向
 				boundary_data.second.at(2) = 1;  // 增量
 			}
 			else if (str.find("YSYMM") != std::string::npos) {
 				// Y对称：约束Y方向位移
+				std::cout << "  使用特殊约束类型: YSYMM (Y对称)" << std::endl;
 				boundary_data.second.at(0) = 1;  // Y方向 (第2个自由度)
 				boundary_data.second.at(1) = 1;  // 仅Y方向
 				boundary_data.second.at(2) = 1;  // 增量
 			}
 			else if (str.find("ZSYMM") != std::string::npos) {
 				// Z对称：约束Z方向位移
+				std::cout << "  使用特殊约束类型: ZSYMM (Z对称)" << std::endl;
 				boundary_data.second.at(0) = 2;  // Z方向 (第3个自由度)
 				boundary_data.second.at(1) = 2;  // 仅Z方向
 				boundary_data.second.at(2) = 1;  // 增量
@@ -862,27 +973,33 @@ namespace EnSC {
 				std::getline(iss, token, ',');
 				if (token.empty()) {
 					// 如果没有指定自由度，默认约束所有自由度
+					std::cout << "  未指定自由度，默认约束所有自由度 (1-3)" << std::endl;
 					boundary_data.second.at(0) = 0;
 					boundary_data.second.at(1) = 2;
 					boundary_data.second.at(2) = 1;
 				} else {
+					std::cout << "  自由度起始值: " << token << std::endl;
 					boundary_data.second.at(0) = std::stoi(token) - 1;  // 起始自由度
 					
 					std::getline(iss, token, ',');
 					if (token.empty()) {
 						// 如果没有指定结束自由度，则设置为与起始自由度相同
 						boundary_data.second.at(1) = boundary_data.second.at(0);
+						std::cout << "  自由度结束值: 与起始值相同" << std::endl;
 					}
 					else {
 						boundary_data.second.at(1) = std::stoi(token) - 1;  // 结束自由度
+						std::cout << "  自由度结束值: " << token << std::endl;
 					}
 					
 					// 读取增量
 					std::getline(iss, token, ',');
 					if (token.empty()) {
 						boundary_data.second.at(2) = 1;  // 默认增量为1
+						std::cout << "  增量: 默认为1" << std::endl;
 					} else {
 						boundary_data.second.at(2) = std::stoi(token);
+						std::cout << "  增量: " << token << std::endl;
 					}
 				}
 			}
@@ -899,6 +1016,8 @@ namespace EnSC {
 				std::cout << "添加全局固定约束 (共 " << boundary_data.first.size() << " 个节点)" << std::endl;
 			}
 		}
+		
+		std::cout << "位移边界条件处理完成" << std::endl;
 	}
 
 	/**
@@ -1012,10 +1131,21 @@ namespace EnSC {
 		while (fin.peek() == '*')
 			std::getline(fin, str);
 		
+		// 如果下一行是另一个关键字（以*开头），表示这是一个纯粹的清除操作
+		// 这种情况下，我们已经在BOUNDARY方法中处理了op=NEW参数，所以可以直接返回
+		if (fin.peek() == '*') {
+			std::cout << "速度边界条件已清除，无新添加的约束" << std::endl;
+			return;
+		}
+		
+		std::cout << "开始处理速度边界条件数据..." << std::endl;
+		
 		// 读取速度边界条件数据
 		while (fin.peek() != '*' && !fin.eof()) {
 			std::getline(fin, str);
 			toUpperCase(str);
+			std::cout << "  解析速度边界行: " << str << std::endl;
+			
 			std::istringstream iss(str);
 			std::string token;
 
@@ -1031,27 +1161,55 @@ namespace EnSC {
 			// 处理节点集合或单个节点
 			if (str.find("SET-") != std::string::npos) {
 				std::getline(iss, token, ',');
-				boundary_data.first = exdyna.map_set_node_list[token];
+				std::cout << "  使用节点集: " << token << std::endl;
+				
+				// 检查节点集是否存在
+				if (exdyna.map_set_node_list.find(token) != exdyna.map_set_node_list.end()) {
+					boundary_data.first = exdyna.map_set_node_list[token];
+				} else {
+					std::cerr << "  警告: 找不到节点集 " << token << std::endl;
+					continue; // 跳过这一行
+				}
 			}
 			else {
 				std::getline(iss, token, ',');
-				std::vector<std::size_t> temp_vector;
-				temp_vector.emplace_back(std::stoi(token) - 1);
-				boundary_data.first = temp_vector;
+				std::cout << "  使用单个节点: " << token << std::endl;
+				try {
+					std::vector<std::size_t> temp_vector;
+					temp_vector.emplace_back(std::stoi(token) - 1);
+					boundary_data.first = temp_vector;
+				} catch (const std::exception& e) {
+					std::cerr << "  警告: 解析节点索引出错: " << e.what() << std::endl;
+					continue; // 跳过这一行
+				}
 			}
 
+			// 读取自由度信息
 			std::getline(iss, token, ',');
+			if (token.empty()) {
+				std::cerr << "  警告: 缺少自由度信息" << std::endl;
+				continue; // 跳过这一行
+			}
+			
+			std::cout << "  自由度起始值: " << token << std::endl;
 			boundary_data.second.first[0] = std::stoi(token) - 1;
+			
 			std::getline(iss, token, ',');
 			if (token.empty()) {
 				boundary_data.second.first[1] = boundary_data.second.first[0];
+				std::cout << "  自由度结束值: 与起始值相同" << std::endl;
 			}
 			else {
 				boundary_data.second.first[1] = std::stoi(token) - 1;
+				std::cout << "  自由度结束值: " << token << std::endl;
 			}
 
+			// 读取速度值
 			if (std::getline(iss, token, ',')) {
 				boundary_data.second.second = convertString<Types::Real>(token);
+				std::cout << "  速度值: " << boundary_data.second.second << std::endl;
+			} else {
+				std::cout << "  默认速度值: 0.0" << std::endl;
 			}
             
 			// 添加到当前步骤的约束列表中
@@ -1066,6 +1224,8 @@ namespace EnSC {
 				std::cout << "添加全局速度约束 (共 " << boundary_data.first.size() << " 个节点)" << std::endl;
 			}
 		}
+		
+		std::cout << "速度边界条件处理完成" << std::endl;
 	}
 
 	//要修改
