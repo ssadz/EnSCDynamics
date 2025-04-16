@@ -38,7 +38,13 @@ namespace EnSC {
 		Cvisq((Real)1.2),
 		time_interval(one),
 		time_output(zero),
-		time_interval_set(false) {
+		time_interval_set(false),
+		currentStepIndex(0) {
+		// 初始化边界条件为空
+		currentBoundary.spc_nodes.clear();
+		currentBoundary.vel_nodes.clear();
+		
+		// 初始化重力为未激活
 		std::get<0>(gravity) = false;
 	}
 
@@ -61,8 +67,8 @@ namespace EnSC {
 		for (std::size_t i = 0; i < steps.size(); ++i) {
 			std::cout << "步骤 " << i << ": " << steps[i].name 
 				<< " 时间周期=" << steps[i].timePeriod 
-				<< " 约束条件数=" << steps[i].boundary_spc_node.size() 
-				<< " 速度条件数=" << steps[i].boundary_vel_node.size() << std::endl;
+				<< " 约束条件数=" << steps[i].boundary.spc_nodes.size() 
+				<< " 速度条件数=" << steps[i].boundary.vel_nodes.size() << std::endl;
 		}
 		
 		// 遍历所有步骤进行计算
@@ -334,9 +340,9 @@ namespace EnSC {
 			#pragma omp single // 仅由单个线程创建以下任务
 			{
 				// --- 应用速度边界条件 --- 
-				if (!boundary_vel_node.empty()) {
+				if (!currentBoundary.vel_nodes.empty()) {
 					// 使用范围迭***循环遍历速度边界条件定义
-					for (const auto& iter : boundary_vel_node) {
+					for (const auto& iter : currentBoundary.vel_nodes) {
 						#pragma omp task // 为每个边界条件定义创建一个任务
 						{
 							// iter 直接是 boundary_vel_node 中的元素 (std::pair)
@@ -359,9 +365,9 @@ namespace EnSC {
 				}
 
 				// --- 应用固定边界条件 --- 
-				if (!boundary_spc_node.empty()) {
+				if (!currentBoundary.spc_nodes.empty()) {
 					// 使用范围迭***循环遍历固定边界条件定义
-					for (const auto& iter : boundary_spc_node) {
+					for (const auto& iter : currentBoundary.spc_nodes) {
 						#pragma omp task // 为每个边界条件定义创建一个任务
 						{
 							// iter 直接是 boundary_spc_node 中的元素 (std::pair)
@@ -399,9 +405,9 @@ namespace EnSC {
 			#pragma omp single // 仅由单个线程创建以下任务
 			{
 				// --- 处理速度边界条件（将对应自由度加速度设为0）---
-				if (!boundary_vel_node.empty()) {
+				if (!currentBoundary.vel_nodes.empty()) {
 					// 使用范围迭***循环遍历速度边界条件定义
-					for (const auto& iter : boundary_vel_node) {
+					for (const auto& iter : currentBoundary.vel_nodes) {
 						#pragma omp task // 为每个边界条件定义创建一个任务
 						{
 							// iter 直接是 boundary_vel_node 中的元素 (std::pair)
@@ -423,9 +429,9 @@ namespace EnSC {
 				}
 
 				// --- 处理固定边界条件（计算反力，并将加速度设为0）---
-				if (!boundary_spc_node.empty()) {
+				if (!currentBoundary.spc_nodes.empty()) {
 					// 使用范围迭***循环遍历固定边界条件定义
-					for (const auto& iter : boundary_spc_node) {
+					for (const auto& iter : currentBoundary.spc_nodes) {
 						#pragma omp task // 为每个边界条件定义创建一个任务
 						{
 							// iter 直接是 boundary_spc_node 中的元素 (std::pair)
@@ -445,13 +451,6 @@ namespace EnSC {
 										// 读取当前加速度值
 										double sol_a = solution_a[idx]; 
 										if (sol_a != 0.0) {
-											// 使用 critical 段保护对共享变量 solution_rf 和 solution_a 的写入
-											// 防止不同任务同时写入同一内存位置导致的数据竞争
-											// #pragma omp critical
-											// {
-											// 	solution_rf[idx] = -sol_a; // 计算反力
-											// 	solution_a[idx] = 0.0;    // 将加速度设为0
-											// }
 											solution_rf[idx] = -sol_a; // 计算反力
 											solution_a[idx] = 0.0;    // 将加速度设为0
 										}
@@ -1706,26 +1705,25 @@ namespace EnSC {
 		// --- 边界条件继承逻辑 ---
 		if (stepIndex == 0) {
 			// 第一步，直接用自身
-			boundary_spc_node = stepData.boundary_spc_node;
-			boundary_vel_node = stepData.boundary_vel_node;
-			prev_boundary_spc_node = boundary_spc_node;
-			prev_boundary_vel_node = boundary_vel_node;
+			currentBoundary = stepData.boundary;
 		} else {
-			// 继承逻辑
-			if (stepData.boundary_spc_node.empty()) {
-				boundary_spc_node = prev_boundary_spc_node;
+			// 继承逻辑 - 从当前步骤和前一步骤获取边界条件
+			const auto& prevStepData = steps[stepIndex - 1];
+			
+			// 如果当前步骤某类型边界条件为空，则继承前一步骤的
+			if (stepData.boundary.spc_nodes.empty()) {
+				currentBoundary.spc_nodes = prevStepData.boundary.spc_nodes;
 			} else {
-				boundary_spc_node = stepData.boundary_spc_node;
+				currentBoundary.spc_nodes = stepData.boundary.spc_nodes;
 			}
-			if (stepData.boundary_vel_node.empty()) {
-				boundary_vel_node = prev_boundary_vel_node;
+			
+			if (stepData.boundary.vel_nodes.empty()) {
+				currentBoundary.vel_nodes = prevStepData.boundary.vel_nodes;
 			} else {
-				boundary_vel_node = stepData.boundary_vel_node;
+				currentBoundary.vel_nodes = stepData.boundary.vel_nodes;
 			}
-			// 更新prev为本step实际生效的
-			prev_boundary_spc_node = boundary_spc_node;
-			prev_boundary_vel_node = boundary_vel_node;
 		}
+		
 		// 其他特定于步骤的设置可以在这里添加
 		std::cout << "Changed to step: " << stepData.name << " with time period: " << stepData.timePeriod << std::endl;
 	}

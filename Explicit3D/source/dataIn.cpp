@@ -185,8 +185,14 @@ namespace EnSC {
 			std::cout << "------------------步骤调试信息------------------" << std::endl;
 			std::cout << "步骤名称: " << currentStep.name << std::endl;
 			std::cout << "时间周期: " << currentStep.timePeriod << std::endl;
-			std::cout << "空间边界条件节点数: " << currentStep.boundary_spc_node.size() << std::endl;
-			std::cout << "速度边界条件节点数: " << currentStep.boundary_vel_node.size() << std::endl;
+			std::cout << "本步骤定义的固定约束节点条件数: " << currentStep.boundary.spc_nodes.size() << std::endl;
+			std::cout << "本步骤定义的速度约束节点条件数: " << currentStep.boundary.vel_nodes.size() << std::endl;
+			
+			// 提示关于边界条件继承的情况
+			if (exdyna.steps.size() > 1) {
+				std::cout << "注意: 在运行时，如果本步骤未定义某类边界条件，将从前一步骤继承" << std::endl;
+			}
+			
 			std::cout << "------------------------------------------------" << std::endl;
 		} else {
 			std::cout << "警告: 当前步骤数据未保存!" << std::endl;
@@ -282,12 +288,11 @@ namespace EnSC {
 							// 创建新的步骤数据
 							StepData stepData;
 							stepData.name = currentStepName;
-							// --- 新增：边界条件继承 ---
-							if (!exdyna.steps.empty()) {
-								// 继承上一个step的边界条件（只有新step未指定时才会生效）
-								stepData.boundary_spc_node = exdyna.steps.back().boundary_spc_node;
-								stepData.boundary_vel_node = exdyna.steps.back().boundary_vel_node;
-							}
+							
+							// --- 不需要在这里显式继承边界条件，切换步骤时会自动处理 ---
+							// 每个步骤只保存它自己显式定义的边界条件
+							// 继承逻辑在 setCurrentStep 方法中处理
+							
 							exdyna.steps.push_back(stepData);
 							std::cout << "进入步骤定义模式: " << currentStepName << std::endl;
 							continue;
@@ -884,11 +889,15 @@ namespace EnSC {
             
 			// 添加到当前步骤的约束列表中
 			if (currentState == ParseState::STEP_DEFINITION && !exdyna.steps.empty()) {
-				exdyna.steps.back().boundary_spc_node.push_back(boundary_data);
+				// 只添加到当前解析中的步骤
+				exdyna.steps.back().boundary.spc_nodes.push_back(boundary_data);
+				std::cout << "在步骤 " << exdyna.steps.back().name << " 添加固定约束 (共 " 
+                          << boundary_data.first.size() << " 个节点)" << std::endl;
+			} else {
+				// 如果不在Step定义中，则添加到全局约束
+				exdyna.currentBoundary.spc_nodes.push_back(boundary_data);
+				std::cout << "添加全局固定约束 (共 " << boundary_data.first.size() << " 个节点)" << std::endl;
 			}
-            
-			// 同时也添加到全局约束列表中（保持向后兼容）
-			exdyna.boundary_spc_node.push_back(boundary_data);
 		}
 	}
 
@@ -1047,11 +1056,15 @@ namespace EnSC {
             
 			// 添加到当前步骤的约束列表中
 			if (currentState == ParseState::STEP_DEFINITION && !exdyna.steps.empty()) {
-				exdyna.steps.back().boundary_vel_node.push_back(boundary_data);
+				// 只添加到当前解析中的步骤
+				exdyna.steps.back().boundary.vel_nodes.push_back(boundary_data);
+				std::cout << "在步骤 " << exdyna.steps.back().name << " 添加速度约束 (共 " 
+                          << boundary_data.first.size() << " 个节点)" << std::endl;
+			} else {
+				// 如果不在Step定义中，则添加到全局约束
+				exdyna.currentBoundary.vel_nodes.push_back(boundary_data);
+				std::cout << "添加全局速度约束 (共 " << boundary_data.first.size() << " 个节点)" << std::endl;
 			}
-            
-			// 同时也添加到全局约束列表中（保持向后兼容）
-			exdyna.boundary_vel_node.push_back(boundary_data);
 		}
 	}
 

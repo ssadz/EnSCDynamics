@@ -45,12 +45,20 @@ namespace EnSC {
 		Types::Real WOS;    // 声速 (材料参数)
 	};
 
+	// --- 边界条件结构体 ---
+	struct BoundaryCondition {
+		// 位移约束节点集合
+		std::vector<std::pair<std::vector<std::size_t>, std::array<std::size_t, 3>>> spc_nodes;
+		
+		// 速度约束节点集合
+		std::vector<std::pair<std::vector<std::size_t>, std::pair<std::array<std::size_t, 2>, Types::Real>>> vel_nodes;
+	};
+
 	// --- 步骤数据结构 ---
 	struct StepData {
 		std::string name;                 // 步骤名称
 		Types::Real timePeriod;           // 时间周期
-		std::vector<std::pair<std::vector<std::size_t>, std::array<std::size_t, 3>>> boundary_spc_node; // 位移约束节点集合
-		std::vector<std::pair<std::vector<std::size_t>, std::pair<std::array<std::size_t, 2>, Types::Real>>> boundary_vel_node; // 速度约束节点集合
+		BoundaryCondition boundary;       // 边界条件
 		// 其他特定于步骤的数据可以在这里添加
 	};
 
@@ -217,8 +225,6 @@ namespace EnSC {
 		// --- 重力、边界条件初始化数据 ---
 		std::tuple<bool, std::string, Types::Real, Types::Real, Types::Real, Types::Real> gravity; // 重力
 		std::vector<std::tuple<std::string, std::string, std::string, Types::Real>> dsload;        // 分布外力 (瞬时存储)
-		std::vector<std::pair<std::vector<std::size_t>, std::array<std::size_t, 3>>> boundary_spc_node; // 位移约束节点集合
-		std::vector<std::pair<std::vector<std::size_t>, std::pair<std::array<std::size_t, 2>, Types::Real>>> boundary_vel_node; // 速度约束节点集合
 		std::vector<std::pair<std::vector<std::size_t>, std::pair<std::size_t, Types::Real>>> ini_vel_generation; // 初始速度生成节点集合
 		std::map<int, int> mPart_PID_MID;              // Part ID 到 Material ID 映射 (瞬时存储)
 		std::map<std::string, std::vector<std::size_t>> map_set_node_list; // 节点集合到节点数组映射
@@ -245,10 +251,10 @@ namespace EnSC {
 		// --- 新增变量 ---
 		std::size_t currentStepIndex; // 新增变量：当前时间步骤索引
 		std::vector<StepData> steps;  // 新增变量：所有步骤的数据
-
-		// --- 新增：用于边界条件继承的上一步边界条件缓存 ---
-		std::vector<std::pair<std::vector<std::size_t>, std::array<std::size_t, 3>>> prev_boundary_spc_node; // 上一步位移约束
-		std::vector<std::pair<std::vector<std::size_t>, std::pair<std::array<std::size_t, 2>, Types::Real>>> prev_boundary_vel_node; // 上一步速度约束
+		
+		// --- 当前边界条件 ---
+		BoundaryCondition currentBoundary;      // 当前步骤的边界条件
+		//BoundaryCondition prevBoundary;         // 上一步骤的边界条件
 
 	};
 
