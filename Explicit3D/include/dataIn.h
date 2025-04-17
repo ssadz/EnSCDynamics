@@ -3,7 +3,7 @@
 #include <fstream>
 #include <map>
 #include "exDyna3D.h"
-
+#include "InpData.h"
 
 namespace EnSC {
 	class exDyna3D;
@@ -39,6 +39,7 @@ namespace EnSC {
 		 * @param fileName 输入文件名（.inp格式）
 		 */
 		void read_inp(std::string fileName);
+
 	private:
 		exDyna3D& exdyna; // 引用到求解器对象
 		ParseState currentState = ParseState::GLOBAL; // 当前解析状态
@@ -48,6 +49,14 @@ namespace EnSC {
 		std::string currentMaterialName; // 当前Material名称
 		std::string currentInstanceName; // 当前实例名称
 		std::string currentInstancePart; // 当前实例对应的部件
+		
+		// 新增：Inp数据结构和当前指针
+		InpData inp_data;               // INP文件解析后的数据结构
+		InpPart* currentPartPtr;        // 当前正在处理的部件指针
+		InpAssembly* currentAssemblyPtr; // 当前正在处理的装配指针
+		
+		// 新增：将解析好的inp_data转换为exdyna数据结构
+		void transferToExDyna();
 		
 		// 节点和单元全局到局部索引的映射
 		std::map<std::string, std::map<int, int>> instanceNodeMap; // 实例名 -> (全局索引 -> 局部索引)

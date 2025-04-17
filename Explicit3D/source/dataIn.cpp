@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <string>
 #include <cctype>
+#include "../include/InpData.h"
 
 namespace EnSC {
 	/**
@@ -64,7 +65,7 @@ namespace EnSC {
 	 * @param p_exdyna 引用到exDyna3D对象，用于存储解析结果
 	 */
 	DataIn::DataIn(exDyna3D& p_exdyna)
-		:exdyna(p_exdyna) {
+		:exdyna(p_exdyna), currentPartPtr(nullptr), currentAssemblyPtr(nullptr) {
 		// 初始化关键字映射表，将输入文件中的关键字与对应的处理函数关联
 		k_func["*NODE"] = &DataIn::NODE;                   // 节点数据
 		k_func["*ELEMENT"] = &DataIn::ELEMENT;             // 单元数据
@@ -140,11 +141,13 @@ namespace EnSC {
 	 * @return 处理成功返回true
 	 */
 	bool DataIn::INSTANCE() {
-		// 提取实例名称和对应的部件
-		currentInstanceName = extractNameFromKeyword(str, "NAME=");
-		currentInstancePart = extractNameFromKeyword(str, "PART=");
-		
-		std::cout << "定义实例: " << currentInstanceName << "，引用部件: " << currentInstancePart << std::endl;
+		if (!currentAssemblyPtr) return false;
+		std::string instance_name = extractNameFromKeyword(str, "NAME=");
+		std::string part_name = extractNameFromKeyword(str, "PART=");
+		InpInstance inst;
+		inst.name = instance_name;
+		inst.part_name = part_name;
+		currentAssemblyPtr->instances.push_back(inst);
 		return true;
 	}
 
@@ -154,6 +157,7 @@ namespace EnSC {
 	 * @return 处理成功返回true
 	 */
 	bool DataIn::END_PART() {
+		currentPartPtr = nullptr;
 		currentState = ParseState::GLOBAL;
 		std::cout << "结束部件定义: " << currentPartName << std::endl;
 		return true;
@@ -165,6 +169,7 @@ namespace EnSC {
 	 * @return 处理成功返回true
 	 */
 	bool DataIn::END_ASSEMBLY() {
+		currentAssemblyPtr = nullptr;
 		currentState = ParseState::GLOBAL;
 		std::cout << "结束装配定义: " << currentAssemblyName << std::endl;
 		return true;
@@ -259,6 +264,8 @@ namespace EnSC {
 		currentMaterialName = "";
 		currentInstanceName = "";
 		currentInstancePart = "";
+		currentPartPtr = nullptr;
+		currentAssemblyPtr = nullptr;
 
 		// 逐行读取并处理文件内容
 		while (!fin.eof()) {
@@ -283,6 +290,9 @@ namespace EnSC {
 						}
 						else if (str.find("*PART") != std::string::npos) {
 							currentPartName = extractNameFromKeyword(str);
+							inp_data.parts.emplace_back();
+							currentPartPtr = &inp_data.parts.back();
+							currentPartPtr->name = currentPartName;
 							currentState = ParseState::PART_DEFINITION;
 							std::cout << "进入部件定义模式: " << currentPartName << std::endl;
 							continue;
@@ -292,6 +302,9 @@ namespace EnSC {
 							if (currentAssemblyName.empty()) {
 								currentAssemblyName = "MainAssembly"; // 默认名称
 							}
+							inp_data.assemblies.emplace_back();
+							currentAssemblyPtr = &inp_data.assemblies.back();
+							currentAssemblyPtr->name = currentAssemblyName;
 							currentState = ParseState::ASSEMBLY_DEFINITION;
 							std::cout << "进入装配定义模式: " << currentAssemblyName << std::endl;
 							continue;
@@ -464,6 +477,9 @@ namespace EnSC {
 		fin.close();
 		std::cout << "成功读取文件 " << fileName << "！" << std::endl;
 		
+		// 新增：调用transferToExDyna()将inp_data转换为exdyna数据
+		transferToExDyna();
+		
 		// 更新材料属性，确保在所有数据读取后执行
 		exdyna.mMatElastic.update();
 		
@@ -493,39 +509,19 @@ namespace EnSC {
 	 * @return 处理成功返回true
 	 */
 	bool DataIn::NODE() {
-		// 跳过可能存在的注释行
-		while (fin.peek() == '*') {
-			std::getline(fin, str);
-		}
-
-		// 逐行读取节点坐标
+		if (!currentPartPtr) return false;
+		while (fin.peek() == '*') std::getline(fin, str);
 		Types::Point<3> x;
 		while (fin.peek() != '*' && !fin.eof()) {
 			std::getline(fin, str);
-			if (str.empty()) {
-				continue;  // 跳过空行
-			}
-
+			if (str.empty()) continue;
 			std::istringstream iss(str);
 			std::string token;
-
-			// 读取节点ID（不使用）
-			std::getline(iss, token, ',');
-
-			// 读取X坐标
-			std::getline(iss, token, ',');
-			x[0] = convertString<Types::Real>(token);
-
-			// 读取Y坐标
-			std::getline(iss, token, ',');
-			x[1] = convertString<Types::Real>(token);
-
-			// 读取Z坐标
-			std::getline(iss, token, ',');
-			x[2] = convertString<Types::Real>(token);
-
-			// 将节点坐标添加到节点数组
-			exdyna.vertices.emplace_back(x);
+			std::getline(iss, token, ','); // 节点ID
+			std::getline(iss, token, ','); x[0] = convertString<Types::Real>(token);
+			std::getline(iss, token, ','); x[1] = convertString<Types::Real>(token);
+			std::getline(iss, token, ','); x[2] = convertString<Types::Real>(token);
+			currentPartPtr->nodes.push_back(x);
 		}
 		return true;
 	}
@@ -538,16 +534,14 @@ namespace EnSC {
 	 * @return 处理成功返回true
 	 */
 	bool DataIn::MATERIAL() {
-		Types::Real density = 0.0;          // 材料密度
-		Types::Real elasticModulus = 0.0;   // 弹性模量
-		Types::Real poissonRatio = 0.0;     // 泊松比
-		std::string materialName;           // 材料名称
-
+		InpMaterial material;
+		material.name = currentMaterialName;
+		
 		// 局部定义的大写转换函数
 		auto toUpperCase = [](std::string& str) {
 			std::transform(str.begin(), str.end(), str.begin(), [](unsigned char c) { return std::toupper(c); });
-			};
-
+		};
+		
 		// 读取并解析材料块
 		while (std::getline(fin, str)) {
 			toUpperCase(str);
@@ -555,14 +549,14 @@ namespace EnSC {
 				// 获取材料名称
 				auto pos = str.find("NAME=");
 				if (pos != std::string::npos) {
-					materialName = str.substr(pos + 5);
+					material.name = str.substr(pos + 5);
 				}
 			}
 			else if (str.find("*DENSITY") != std::string::npos) {
 				// 读取密度
 				std::getline(fin, str);
 				std::istringstream densityStream(str);
-				densityStream >> density;
+				densityStream >> material.density;
 			}
 			else if (str.find("*ELASTIC") != std::string::npos) {
 				// 读取弹性参数（弹性模量和泊松比）
@@ -570,22 +564,25 @@ namespace EnSC {
 				std::istringstream iss(str);
 				std::string token;
 				std::getline(iss, token, ',');
-				elasticModulus = convertString<Types::Real>(token);
+				material.E = convertString<Types::Real>(token);
 				std::getline(iss, token, ',');
-				poissonRatio = convertString<Types::Real>(token);
+				material.v = convertString<Types::Real>(token);
 			}
 			else if (str.find("*") == 0 && str.find("*MATERIAL") == std::string::npos) {
 				// 遇到其他关键字，表示材料块结束
 				break;
 			}
 		}
-
-		// 将材料属性设置到模型中
-		exdyna.mMatElastic.rho = density;
-		exdyna.mMatElastic.E = elasticModulus;
-		exdyna.mMatElastic.v = poissonRatio;
-		exdyna.mMatElastic.update();  // 更新派生属性（如剪切模量、体积模量等）
-
+		
+		// 添加材料到inp_data
+		inp_data.materials.push_back(material);
+		
+		// 同时将材料属性设置到模型中
+		exdyna.mMatElastic.rho = material.density;
+		exdyna.mMatElastic.E = material.E;
+		exdyna.mMatElastic.v = material.v;
+		exdyna.mMatElastic.update();  // 更新派生属性
+		
 		return true;
 	}
 
@@ -597,41 +594,20 @@ namespace EnSC {
 	 * @return 处理成功返回true
 	 */
 	bool DataIn::ELEMENT() {
-		// 跳过可能存在的注释行
-		while (fin.peek() == '*') {
+		if (!currentPartPtr) return false;
+		while (fin.peek() == '*') std::getline(fin, str);
+		while (fin.peek() != '*' && !fin.eof()) {
 			std::getline(fin, str);
-		}
-
-		int PID = 1;  // 默认物理ID
-		int MID = 1;  // 默认材料ID
-		while (fin.peek() != '*' && fin.peek() != EOF) {
-			std::getline(fin, str);
-
-			// 跳过空行
 			if (str.empty()) continue;
-
 			std::istringstream iss(str);
 			std::string token;
-
-			// 读取单元ID（不使用）
-			std::getline(iss, token, ',');
-
-			// 读取单元的节点索引
+			std::getline(iss, token, ','); // 单元ID
 			std::vector<Types::Vertex_index> verticesIndex;
 			while (std::getline(iss, token, ',')) {
 				verticesIndex.push_back(std::stoul(token));
 			}
-
-			// 节点索引从1开始，转换为从0开始
-			for (auto& idx : verticesIndex) {
-				idx -= 1;
-			}
-
-			// 创建新单元并设置属性
-			exdyna.hexahedron_elements.emplace_back();
-			exdyna.hexahedron_elements.back().set_PID(PID);
-			exdyna.hexahedron_elements.back().set_MID(MID);
-			exdyna.hexahedron_elements.back().set_verticesIndex(verticesIndex);
+			for (auto& idx : verticesIndex) idx -= 1;
+			currentPartPtr->elements.push_back(verticesIndex);
 		}
 		return true;
 	}
@@ -645,85 +621,34 @@ namespace EnSC {
 	 * @return 处理成功返回true
 	 */
 	bool DataIn::SET_NODE_LIST() {
-		// 从关键字行中提取节点集合名称和实例名称（如果有）
-		std::string set_name;
-		std::string instance_name;
-		
+		std::string set_name, instance_name;
 		parseSetWithInstance(str, set_name, instance_name);
-		if (set_name.empty()) {
-			set_name = extractNameFromKeyword(str, "NSET=");
-		}
-		
-		if (set_name.empty()) {
-			std::cerr << "警告: 无法解析节点集合名称" << std::endl;
-			// 跳过这个节点集合的数据
-			while (fin.peek() != '*' && fin.peek() != EOF) {
-				std::getline(fin, str);
-			}
-			return false;
-		}
-		
-		bool is_generate = false;
-		if (str.find("GENERATE") != std::string::npos) {
-			is_generate = true;
-		}
-
-		// 读取节点集合数据
+		bool is_generate = (str.find("GENERATE") != std::string::npos);
 		std::vector<std::size_t> set_nodes;
-		while (fin.peek() != '*' && fin.peek() != EOF) {
+		while (fin.peek() != '*' && !fin.eof()) {
 			std::getline(fin, str);
 			if (str.empty()) continue;
-			
 			std::istringstream iss(str);
 			std::string token;
-			
-			// 读取所有数值，支持逗号或空格分隔
 			while (!iss.eof()) {
-				// 尝试读取一个值
 				if (iss >> token) {
-					// 处理可能的逗号
-					if (token.back() == ',') {
-						token.pop_back();
-					}
-					
-					// 尝试转换为数值
-					try {
-						std::size_t value = std::stoul(token);
-						set_nodes.push_back(value);
-					}
-					catch (const std::exception& e) {
-						std::cerr << "警告: 解析节点索引时出错: " << token << std::endl;
-					}
+					if (token.back() == ',') token.pop_back();
+					try { set_nodes.push_back(std::stoul(token)); } catch (...) {}
 				}
-				
-				// 跳过后续的逗号
-				if (iss.peek() == ',') {
-					iss.ignore();
-				}
+				if (iss.peek() == ',') iss.ignore();
 			}
 		}
-
-		// 处理生成模式（start,end,step）
 		if (is_generate && set_nodes.size() >= 2) {
-			std::size_t start = set_nodes[0];
-			std::size_t end = set_nodes[1];
-			std::size_t step = (set_nodes.size() >= 3) ? set_nodes[2] : 1;
-			
+			std::size_t start = set_nodes[0], end = set_nodes[1], step = (set_nodes.size() >= 3) ? set_nodes[2] : 1;
 			set_nodes.clear();
-			for (std::size_t i = start; i <= end; i += step) {
-				set_nodes.push_back(i);
-			}
+			for (std::size_t i = start; i <= end; i += step) set_nodes.push_back(i);
 		}
-
-		// 索引从1开始，转换为从0开始
-		for (auto& idx : set_nodes) {
-			idx -= 1;
+		for (auto& idx : set_nodes) idx -= 1;
+		if (currentPartPtr && currentState == ParseState::PART_DEFINITION) {
+			currentPartPtr->node_sets[set_name] = set_nodes;
+		} else if (currentAssemblyPtr && currentState == ParseState::ASSEMBLY_DEFINITION) {
+			currentAssemblyPtr->node_sets[set_name] = set_nodes;
 		}
-
-		// 只用set_name，不拼接instance前缀，后读覆盖前读
-		std::cout << "定义节点集: " << set_name << " 共 " << set_nodes.size() << " 个节点" << std::endl;
-		exdyna.map_set_node_list[set_name] = set_nodes;
-		
 		return true;
 	}
 
@@ -1345,94 +1270,35 @@ namespace EnSC {
 	 * @return 处理成功返回true
 	 */
 	bool DataIn::SET_ELE_LIST() {
-		// 从关键字行中提取单元集合名称和实例名称（如果有）
-		std::string set_name;
-		std::string instance_name;
-		
+		std::string set_name, instance_name;
 		parseSetWithInstance(str, set_name, instance_name);
-		if (set_name.empty()) {
-			set_name = extractNameFromKeyword(str, "ELSET=");
-		}
-		
-		if (set_name.empty()) {
-			std::cerr << "警告: 无法解析单元集合名称" << std::endl;
-			// 跳过这个单元集合的数据
-			while (fin.peek() != '*' && fin.peek() != EOF) {
-				std::getline(fin, str);
-			}
-			return false;
-		}
-
-		// 读取单元集合数据
 		std::vector<std::size_t> element_indices;
-		while (fin.peek() != '*' && fin.peek() != EOF) {
+		while (fin.peek() != '*' && !fin.eof()) {
 			std::getline(fin, str);
 			if (str.empty()) continue;
-			
-			// 检查是否有特殊关键字
-			if (str.find("EALL") != std::string::npos) {
-				element_indices.clear();
-				for (std::size_t i = 1; i <= exdyna.hexahedron_elements.size(); i++) {
-					element_indices.push_back(i);
-				}
-				continue;
-			}
-			
 			std::istringstream iss(str);
 			std::string token;
 			std::vector<std::size_t> line_values;
-			
-			// 读取所有数值，支持逗号或空格分隔
 			while (!iss.eof()) {
-				// 尝试读取一个值
 				if (iss >> token) {
-					// 处理可能的逗号
-					if (token.back() == ',') {
-						token.pop_back();
-					}
-					
-					// 尝试转换为数值
-					try {
-						std::size_t value = std::stoul(token);
-						line_values.push_back(value);
-					}
-					catch (const std::exception& e) {
-						std::cerr << "警告: 解析单元索引时出错: " << token << std::endl;
-					}
+					if (token.back() == ',') token.pop_back();
+					try { line_values.push_back(std::stoul(token)); } catch (...) {}
 				}
-				
-				// 跳过后续的逗号
-				if (iss.peek() == ',') {
-					iss.ignore();
-				}
+				if (iss.peek() == ',') iss.ignore();
 			}
-			
-			// 处理当前行的值
 			if (line_values.size() == 3) {
-				// 可能是生成模式 (start, end, step)
-				std::size_t start = line_values[0];
-				std::size_t end = line_values[1];
-				std::size_t step = line_values[2];
-				
-				for (std::size_t i = start; i <= end; i += step) {
-					element_indices.push_back(i);
-				}
-			}
-			else {
-				// 普通模式，直接添加所有值
+				std::size_t start = line_values[0], end = line_values[1], step = line_values[2];
+				for (std::size_t i = start; i <= end; i += step) element_indices.push_back(i);
+			} else {
 				element_indices.insert(element_indices.end(), line_values.begin(), line_values.end());
 			}
 		}
-
-		// 索引从1开始，转换为从0开始
-		for (auto& idx : element_indices) {
-			idx -= 1;
+		for (auto& idx : element_indices) idx -= 1;
+		if (currentPartPtr && currentState == ParseState::PART_DEFINITION) {
+			currentPartPtr->element_sets[set_name] = element_indices;
+		} else if (currentAssemblyPtr && currentState == ParseState::ASSEMBLY_DEFINITION) {
+			currentAssemblyPtr->element_sets[set_name] = element_indices;
 		}
-
-		// 只用set_name，不拼接instance前缀，后读覆盖前读
-		std::cout << "定义单元集: " << set_name << " 共 " << element_indices.size() << " 个单元" << std::endl;
-		exdyna.map_set_ele_list[set_name] = element_indices;
-		
 		return true;
 	}
 
@@ -1660,5 +1526,150 @@ namespace EnSC {
 		return true;
 	}
 
+	// 新增：transferToExDyna方法的实现
+	void DataIn::transferToExDyna() {
+		std::cout << "\n=== 开始转换数据到exDyna3D结构 ===" << std::endl;
+		
+		// 统计数量
+		size_t totalNodes = 0;
+		size_t totalElements = 0;
+		
+		// 1. 统计所有Part的节点和单元数量
+		std::cout << "处理的部件数量: " << inp_data.parts.size() << std::endl;
+		for (const auto& part : inp_data.parts) {
+			totalNodes += part.nodes.size();
+			totalElements += part.elements.size();
+			std::cout << "- 部件 '" << part.name << "': " 
+					  << part.nodes.size() << " 个节点, " 
+					  << part.elements.size() << " 个单元" << std::endl;
+		}
+		
+		// 如果没有Part数据（即inp_data未被填充），则直接返回，不进行转换
+		if (inp_data.parts.empty()) {
+			std::cout << "警告：没有找到有效的Part数据，跳过转换。" << std::endl;
+			return;
+		}
+		
+		// 2. 为exDyna3D分配空间
+		exdyna.vertices.clear();
+		exdyna.hexahedron_elements.clear();
+		exdyna.vertices.reserve(totalNodes);
+		exdyna.hexahedron_elements.reserve(totalElements);
+		
+		// 3. 首先处理所有Part的数据
+		std::map<std::string, size_t> partNodeOffset; // 记录每个Part节点的全局偏移量
+		size_t globalNodeIndex = 0;
+		
+		for (const auto& part : inp_data.parts) {
+			// 记录当前Part的节点偏移量
+			partNodeOffset[part.name] = globalNodeIndex;
+			
+			// 添加节点到exdyna
+			for (const auto& node : part.nodes) {
+				exdyna.vertices.push_back(node);
+				globalNodeIndex++;
+			}
+		}
+		
+		// 4. 添加单元到exdyna
+		size_t globalElementIndex = 0;
+		
+		for (const auto& part : inp_data.parts) {
+			size_t partOffset = partNodeOffset[part.name];
+			
+			// 添加单元到exdyna
+			for (const auto& element : part.elements) {
+				exdyna.hexahedron_elements.emplace_back();
+				auto& newElement = exdyna.hexahedron_elements.back();
+				
+				// 设置单元的物理ID和材料ID（默认为1）
+				newElement.set_PID(1);
+				newElement.set_MID(1);
+				
+				// 复制单元的节点索引，并调整为全局索引
+				std::vector<Types::Vertex_index> globalNodes;
+				globalNodes.reserve(element.size());
+				
+				for (const auto& localIdx : element) {
+					globalNodes.push_back(localIdx + partOffset);
+				}
+				
+				// 设置调整后的节点索引
+				newElement.set_verticesIndex(globalNodes);
+				globalElementIndex++;
+			}
+		}
+		
+		// 5. 处理节点集和单元集 (如有装配，则处理装配级别的集合和节点映射)
+		if (!inp_data.assemblies.empty()) {
+			std::cout << "处理的装配数量: " << inp_data.assemblies.size() << std::endl;
+			
+			for (const auto& assembly : inp_data.assemblies) {
+				std::cout << "- 处理装配 '" << assembly.name << "' 及其实例" << std::endl;
+				
+				// 处理实例
+				for (const auto& instance : assembly.instances) {
+					std::cout << "  - 实例 '" << instance.name << "' 引用部件 '" << instance.part_name << "'" << std::endl;
+					
+					// 找到对应的部件
+					auto partIt = std::find_if(inp_data.parts.begin(), inp_data.parts.end(), 
+						[&](const InpPart& p) { return p.name == instance.part_name; });
+					
+					if (partIt != inp_data.parts.end()) {
+						size_t partOffset = partNodeOffset[partIt->name];
+						
+						// 处理此实例的节点集
+						for (const auto& nodeSetPair : partIt->node_sets) {
+							std::string globalSetName = instance.name + "." + nodeSetPair.first;
+							std::vector<std::size_t> globalNodeSet;
+							
+							for (const auto& localNodeIdx : nodeSetPair.second) {
+								globalNodeSet.push_back(localNodeIdx + partOffset);
+							}
+							
+							// 添加到exdyna的节点集映射
+							exdyna.map_set_node_list[globalSetName] = globalNodeSet;
+							std::cout << "    添加节点集: " << globalSetName << " 包含 " << globalNodeSet.size() << " 个节点" << std::endl;
+						}
+						
+						// 处理此实例的单元集
+						// 类似节点集的处理...但需要映射单元索引
+					}
+				}
+				
+				// 处理装配级别的节点集
+				for (const auto& nodeSetPair : assembly.node_sets) {
+					// 注意：装配级别的节点集通常已经是全局索引，不需要再调整
+					exdyna.map_set_node_list[nodeSetPair.first] = nodeSetPair.second;
+					std::cout << "  添加装配级节点集: " << nodeSetPair.first << " 包含 " << nodeSetPair.second.size() << " 个节点" << std::endl;
+				}
+				
+				// 处理装配级别的单元集
+				// 同样需要处理单元索引映射
+			}
+		}
+		
+		// 6. 处理材料属性
+		if (!inp_data.materials.empty()) {
+			std::cout << "处理材料数据: " << inp_data.materials.size() << " 个材料" << std::endl;
+			
+			// 这里只取第一个材料（假设单一材料）
+			if (!inp_data.materials.empty()) {
+				const auto& material = inp_data.materials[0];
+				exdyna.mMatElastic.rho = material.density;
+				exdyna.mMatElastic.E = material.E;
+				exdyna.mMatElastic.v = material.v;
+				std::cout << "设置材料属性: 密度=" << material.density 
+						  << " E=" << material.E 
+						  << " v=" << material.v << std::endl;
+			}
+		}
+		
+		std::cout << "数据转换完成: " 
+				  << exdyna.vertices.size() << " 个节点, " 
+				  << exdyna.hexahedron_elements.size() << " 个单元" 
+				  << std::endl;
+		std::cout << "=== 转换完成 ===\n" << std::endl;
+	}
 }
 
