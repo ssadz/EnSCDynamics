@@ -50,6 +50,32 @@ namespace EnSC {
 		// 调试：打印set信息
 		printSetInfo();
 		
+		// 打印材料信息
+		std::cout << "\n=== 材料属性信息 ===" << std::endl;
+		// 确保派生属性已更新
+		mMatElastic.update();
+		
+		// 设置输出格式 - 科学计数法，保留6位小数
+		std::cout << std::scientific << std::setprecision(6);
+		
+		// 打印基本属性
+		std::cout << "基本材料属性:" << std::endl;
+		std::cout << "  密度(rho)    = " << mMatElastic.rho << " kg/m³" << std::endl;
+		std::cout << "  杨氏模量(E)  = " << mMatElastic.E << " Pa" << std::endl;
+		std::cout << "  泊松比(v)    = " << std::fixed << std::setprecision(4) << mMatElastic.v << std::endl;
+		
+		// 打印派生属性
+		std::cout << std::scientific << std::setprecision(6);
+		std::cout << "派生材料属性:" << std::endl;
+		std::cout << "  剪切模量(G)  = " << mMatElastic.G << " Pa" << std::endl;
+		std::cout << "  体积模量(K)  = " << mMatElastic.K << " Pa" << std::endl;
+		std::cout << "  拉梅参数(λ)  = " << mMatElastic.lambda << " Pa" << std::endl;
+		std::cout << "  声速(WOS)    = " << mMatElastic.WOS << " m/s" << std::endl;
+		std::cout << "==================\n" << std::endl;
+		
+		// 重置输出格式为默认
+		std::cout << std::defaultfloat;
+		
 		// 计算输出时间间隔
 		calculate_time_interval();
 		
@@ -68,8 +94,18 @@ namespace EnSC {
 				<< " 重置分布面载荷=" << (steps[i].resetDsload ? "是" : "否") << std::endl;
 		}
 		
-		// 遍历所有步骤进行计算
-		for (std::size_t stepIndex = 0; stepIndex < steps.size(); ++stepIndex) {
+		// 先处理Initial步骤（如果存在）的边界条件
+		if (!steps.empty() && steps.front().name == "Initial") {
+			std::cout << "处理Initial步骤中的边界条件..." << std::endl;
+			setCurrentStep(0); // 设置为Initial步骤
+			
+			// 由于Initial步骤时间为0，不需要实际计算，只设置边界条件
+			std::cout << "Initial步骤的边界条件已应用" << std::endl;
+		}
+		
+		// 遍历其他步骤进行计算（从第二个步骤开始，如果第一个是Initial）
+		size_t startStep = (!steps.empty() && steps.front().name == "Initial") ? 1 : 0;
+		for (std::size_t stepIndex = startStep; stepIndex < steps.size(); ++stepIndex) {
 			const auto& stepData = steps[stepIndex];
 			std::cout << "开始计算步骤 " << stepData.name << " (时间周期: " << stepData.timePeriod << ")" << std::endl;
 			
@@ -97,11 +133,42 @@ namespace EnSC {
 			
 			// 标记是否有继承的约束
 			if (stepIndex > 0) {
-				if (stepData.boundary.spc_nodes.empty() && !currentBoundary.spc_nodes.empty()) {
-					std::cout << "固定约束继承自前一步" << std::endl;
+				bool has_inherited_spc = false;
+				bool has_inherited_vel = false;
+				
+				for (const auto& spc : currentBoundary.spc_nodes) {
+					bool found = false;
+					for (const auto& step_spc : stepData.boundary.spc_nodes) {
+						if (spc.first == step_spc.first) {
+							found = true;
+							break;
+						}
+					}
+					if (!found) {
+						has_inherited_spc = true;
+						break;
+					}
 				}
-				if (stepData.boundary.vel_nodes.empty() && !currentBoundary.vel_nodes.empty()) {
-					std::cout << "速度约束继承自前一步" << std::endl;
+				
+				for (const auto& vel : currentBoundary.vel_nodes) {
+					bool found = false;
+					for (const auto& step_vel : stepData.boundary.vel_nodes) {
+						if (vel.first == step_vel.first) {
+							found = true;
+							break;
+						}
+					}
+					if (!found) {
+						has_inherited_vel = true;
+						break;
+					}
+				}
+				
+				if (has_inherited_spc) {
+					std::cout << "固定约束继承自Initial或前一步" << std::endl;
+				}
+				if (has_inherited_vel) {
+					std::cout << "速度约束继承自Initial或前一步" << std::endl;
 				}
 			}
 			std::cout << "-------------------------" << std::endl;
@@ -141,7 +208,13 @@ namespace EnSC {
 
 		this->update_minVertex_perMaterial();
 
-		this->apply_boundary_condition_vec();
+		// 如果有Initial步骤，则设置为当前步骤，应用其边界条件
+		if (!steps.empty() && steps.front().name == "Initial") {
+			setCurrentStep(0);
+		} else {
+			// 否则使用旧的边界条件方式
+			this->apply_boundary_condition_vec();
+		}
 
 		this->add_inForce_to_rhs();
 
@@ -349,12 +422,41 @@ namespace EnSC {
 
 	void exDyna3D::apply_initial_condition() {
 		if (!ini_vel_generation.empty()) {
-			for (auto iter = ini_vel_generation.begin(); iter != ini_vel_generation.end(); iter++) {
-				for (auto& node_id : iter->first) {
-					const auto dof0 = node_id * 3;
-					const auto offset = iter->second.first;
-					const auto value = iter->second.second;
-					solution_v[dof0 + offset] = value;
+			for (const auto& init_vel : ini_vel_generation) {
+				const std::string& set_name = init_vel.first;
+				const auto& dof_idx = init_vel.second.first;
+				const auto& vel_value = init_vel.second.second;
+				
+				// 检查是否是单个节点（以#开头）
+				if (set_name[0] == '#') {
+					// 单个节点，将节点ID字符串转换为索引
+					try {
+						int node_id = std::stoi(set_name.substr(1)) - 1; // 去掉#前缀，并转换为0-索引
+						const auto dof0 = node_id * 3;
+						solution_v[dof0 + dof_idx] = vel_value;
+						std::cout << "为节点 " << (node_id + 1) << " 的自由度 " << (dof_idx + 1) 
+								  << " 设置初始速度: " << vel_value << std::endl;
+					}
+					catch (const std::exception& e) {
+						std::cerr << "警告: 解析节点索引时出错: " << set_name.substr(1) << std::endl;
+					}
+				}
+				else {
+					// 节点集名称，在map_set_node_list中查找
+					auto it = map_set_node_list.find(set_name);
+					if (it != map_set_node_list.end()) {
+						// 找到了节点集，应用初始速度到所有节点
+						for (const auto& node_id : it->second) {
+							const auto dof0 = node_id * 3;
+							solution_v[dof0 + dof_idx] = vel_value;
+						}
+						std::cout << "为节点集 " << set_name << " 的 " << it->second.size() 
+								  << " 个节点的自由度 " << (dof_idx + 1) 
+								  << " 设置初始速度: " << vel_value << std::endl;
+					}
+					else {
+						std::cerr << "警告: 找不到节点集 " << set_name << "，跳过初始速度设置" << std::endl;
+					}
 				}
 			}
 		}
@@ -373,9 +475,34 @@ namespace EnSC {
 						#pragma omp task // 为每个边界条件定义创建一个任务
 						{
 							// iter 直接是 boundary_vel_node 中的元素 (std::pair)
-							const auto& node_ids = iter.first;
+							const std::string& setName = iter.first;
 							const auto& index_range = iter.second.first;
 							const auto value = iter.second.second;
+
+							// 根据setName获取节点列表
+							std::vector<std::size_t> node_ids;
+							
+							// 检查是否是单个节点（以#开头）
+							if (setName[0] == '#') {
+								// 单个节点，解析ID
+								try {
+									int node_id = std::stoi(setName.substr(1)) - 1; // 去掉#前缀，并转换为0-索引
+									node_ids.push_back(node_id);
+								}
+								catch (const std::exception& e) {
+									std::cerr << "警告: 解析节点索引时出错: " << setName.substr(1) << std::endl;
+								}
+							}
+							else {
+								// 节点集，在map_set_node_list中查找
+								auto it = map_set_node_list.find(setName);
+								if (it != map_set_node_list.end()) {
+									node_ids = it->second;
+								}
+								else {
+									std::cerr << "警告: 找不到节点集 " << setName << "，跳过边界条件" << std::endl;
+								}
+							}
 
 							// 遍历该边界条件包含的节点
 							for (const auto& node_id : node_ids) {
@@ -398,11 +525,36 @@ namespace EnSC {
 						#pragma omp task // 为每个边界条件定义创建一个任务
 						{
 							// iter 直接是 boundary_spc_node 中的元素 (std::pair)
-							const auto& node_ids = iter.first;
+							const std::string& setName = iter.first;
 							// 注意 iter.second 是 std::array<size_t, 3>
 							const auto index_start = iter.second[0];
 							const auto index_end = iter.second[1];
 							const auto condition = iter.second[2];
+							
+							// 根据setName获取节点列表
+							std::vector<std::size_t> node_ids;
+							
+							// 检查是否是单个节点（以#开头）
+							if (setName[0] == '#') {
+								// 单个节点，解析ID
+								try {
+									int node_id = std::stoi(setName.substr(1)) - 1; // 去掉#前缀，并转换为0-索引
+									node_ids.push_back(node_id);
+								}
+								catch (const std::exception& e) {
+									std::cerr << "警告: 解析节点索引时出错: " << setName.substr(1) << std::endl;
+								}
+							}
+							else {
+								// 节点集，在map_set_node_list中查找
+								auto it = map_set_node_list.find(setName);
+								if (it != map_set_node_list.end()) {
+									node_ids = it->second;
+								}
+								else {
+									std::cerr << "警告: 找不到节点集 " << setName << "，跳过边界条件" << std::endl;
+								}
+							}
 
 							// 遍历该边界条件包含的节点
 							for (const auto& node_id : node_ids) {
@@ -413,74 +565,6 @@ namespace EnSC {
 										// 设置速度为 0
 										// 注意：假设不同的边界条件定义不会竞争写入同一个 solution_v 条目
 										solution_v[dof0 + i] = 0.0;
-									}
-								}
-							}
-						} // 任务结束
-					}
-				}
-			} // single 结束
-		} // parallel 结束
-	}
-
-	void exDyna3D::apply_boundary_condition_a() {
-		solution_rf.setZero();
-
-		// 使用 OpenMP tasks 并行施加加速度相关的边界条件，结合范围迭***循环创建任务
-		#pragma omp parallel // 创建并行区域
-		{
-			#pragma omp single // 仅由单个线程创建以下任务
-			{
-				// --- 处理速度边界条件（将对应自由度加速度设为0）---
-				if (!currentBoundary.vel_nodes.empty()) {
-					// 使用范围迭***循环遍历速度边界条件定义
-					for (const auto& iter : currentBoundary.vel_nodes) {
-						#pragma omp task // 为每个边界条件定义创建一个任务
-						{
-							// iter 直接是 boundary_vel_node 中的元素 (std::pair)
-							const auto& node_ids = iter.first;
-							const auto& index_range = iter.second.first;
-
-							// 遍历该边界条件包含的节点
-							for (const auto& node_id : node_ids) {
-								const auto dof0 = node_id * 3;
-								// 遍历指定的自由度
-								for (auto i = index_range[0]; i <= index_range[1]; ++i) {
-									// 将加速度设为0
-									// 注意：假设不同的边界条件定义不会竞争写入同一个 solution_a 条目
-									solution_a[dof0 + i] = 0.0;
-								}
-							}
-						} // 任务结束
-					}
-				}
-
-				// --- 处理固定边界条件（计算反力，并将加速度设为0）---
-				if (!currentBoundary.spc_nodes.empty()) {
-					// 使用范围迭***循环遍历固定边界条件定义
-					for (const auto& iter : currentBoundary.spc_nodes) {
-						#pragma omp task // 为每个边界条件定义创建一个任务
-						{
-							// iter 直接是 boundary_spc_node 中的元素 (std::pair)
-							const auto& node_ids = iter.first;
-							// 注意 iter.second 是 std::array<size_t, 3>
-							const auto index_start = iter.second[0];
-							const auto index_end = iter.second[1];
-							const auto condition = iter.second[2];
-
-							// 遍历该边界条件包含的节点
-							for (const auto& node_id : node_ids) {
-								const auto dof0 = node_id * 3;
-								// 遍历指定的自由度
-								for (auto i = index_start; i <= index_end; ++i) {
-									if (condition == 1) { // 如果是固定条件
-										auto idx = dof0 + i;
-										// 读取当前加速度值
-										double sol_a = solution_a[idx]; 
-										if (sol_a != 0.0) {
-											solution_rf[idx] = -sol_a; // 计算反力
-											solution_a[idx] = 0.0;    // 将加速度设为0
-										}
 									}
 								}
 							}
@@ -1893,6 +1977,9 @@ namespace EnSC {
 			}
 		}
 		
+		// 立即应用边界条件到当前状态
+		apply_boundary_condition_vec();
+		
 		// 其他特定于步骤的设置可以在这里添加
 		std::cout << "Changed to step: " << stepData.name << " with time period: " << stepData.timePeriod << std::endl;
 	}
@@ -1957,5 +2044,123 @@ namespace EnSC {
 			std::cout << std::endl;
 		}
 		std::cout << "============================\n" << std::endl;
+	}
+
+	void exDyna3D::apply_boundary_condition_a() {
+		solution_rf.setZero();
+
+		// 使用 OpenMP tasks 并行施加加速度相关的边界条件，结合范围迭***循环创建任务
+		#pragma omp parallel // 创建并行区域
+		{
+			#pragma omp single // 仅由单个线程创建以下任务
+			{
+				// --- 处理速度边界条件（将对应自由度加速度设为0）---
+				if (!currentBoundary.vel_nodes.empty()) {
+					// 使用范围迭***循环遍历速度边界条件定义
+					for (const auto& iter : currentBoundary.vel_nodes) {
+						#pragma omp task // 为每个边界条件定义创建一个任务
+						{
+							// iter 直接是 boundary_vel_node 中的元素 (std::pair)
+							const std::string& setName = iter.first;
+							const auto& index_range = iter.second.first;
+
+							// 根据setName获取节点列表
+							std::vector<std::size_t> node_ids;
+							
+							// 检查是否是单个节点（以#开头）
+							if (setName[0] == '#') {
+								// 单个节点，解析ID
+								try {
+									int node_id = std::stoi(setName.substr(1)) - 1; // 去掉#前缀，并转换为0-索引
+									node_ids.push_back(node_id);
+								}
+								catch (const std::exception& e) {
+									std::cerr << "警告: apply_boundary_condition_a中解析节点索引时出错: " << setName.substr(1) << std::endl;
+								}
+							}
+							else {
+								// 节点集，在map_set_node_list中查找
+								auto it = map_set_node_list.find(setName);
+								if (it != map_set_node_list.end()) {
+									node_ids = it->second;
+								}
+								else {
+									std::cerr << "警告: apply_boundary_condition_a中找不到节点集 " << setName << "，跳过边界条件" << std::endl;
+								}
+							}
+
+							// 遍历该边界条件包含的节点
+							for (const auto& node_id : node_ids) {
+								const auto dof0 = node_id * 3;
+								// 遍历指定的自由度
+								for (auto i = index_range[0]; i <= index_range[1]; ++i) {
+									// 将加速度设为0
+									// 注意：假设不同的边界条件定义不会竞争写入同一个 solution_a 条目
+									solution_a[dof0 + i] = 0.0;
+								}
+							}
+						} // 任务结束
+					}
+				}
+
+				// --- 处理固定边界条件（计算反力，并将加速度设为0）---
+				if (!currentBoundary.spc_nodes.empty()) {
+					// 使用范围迭***循环遍历固定边界条件定义
+					for (const auto& iter : currentBoundary.spc_nodes) {
+						#pragma omp task // 为每个边界条件定义创建一个任务
+						{
+							// iter 直接是 boundary_spc_node 中的元素 (std::pair)
+							const std::string& setName = iter.first;
+							// 注意 iter.second 是 std::array<size_t, 3>
+							const auto index_start = iter.second[0];
+							const auto index_end = iter.second[1];
+							const auto condition = iter.second[2];
+
+							// 根据setName获取节点列表
+							std::vector<std::size_t> node_ids;
+							
+							// 检查是否是单个节点（以#开头）
+							if (setName[0] == '#') {
+								// 单个节点，解析ID
+								try {
+									int node_id = std::stoi(setName.substr(1)) - 1; // 去掉#前缀，并转换为0-索引
+									node_ids.push_back(node_id);
+								}
+								catch (const std::exception& e) {
+									std::cerr << "警告: apply_boundary_condition_a中解析节点索引时出错: " << setName.substr(1) << std::endl;
+								}
+							}
+							else {
+								// 节点集，在map_set_node_list中查找
+								auto it = map_set_node_list.find(setName);
+								if (it != map_set_node_list.end()) {
+									node_ids = it->second;
+								}
+								else {
+									std::cerr << "警告: apply_boundary_condition_a中找不到节点集 " << setName << "，跳过边界条件" << std::endl;
+								}
+							}
+
+							// 遍历该边界条件包含的节点
+							for (const auto& node_id : node_ids) {
+								const auto dof0 = node_id * 3;
+								// 遍历指定的自由度
+								for (auto i = index_start; i <= index_end; ++i) {
+									if (condition == 1) { // 如果是固定条件
+										auto idx = dof0 + i;
+										// 读取当前加速度值
+										double sol_a = solution_a[idx]; 
+										if (sol_a != 0.0) {
+											solution_rf[idx] = -sol_a; // 计算反力
+											solution_a[idx] = 0.0;    // 将加速度设为0
+										}
+									}
+								}
+							}
+						} // 任务结束
+					}
+				}
+			} // single 结束
+		} // parallel 结束
 	}
 }

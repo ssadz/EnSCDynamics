@@ -276,6 +276,15 @@ namespace EnSC {
 		currentPartPtr = nullptr;
 		currentAssemblyPtr = nullptr;
 
+		// 创建初始步骤"Initial"，用于收集*Step外的边界条件
+		if (exdyna.steps.empty()) {
+			StepData initialStep;
+			initialStep.name = "Initial";
+			initialStep.timePeriod = 0.0; // 初始步骤的计算时间为0
+			exdyna.steps.push_back(initialStep);
+			std::cout << "创建初始步骤 'Initial' 用于收集*Step外的条件" << std::endl;
+		}
+
 		// 逐行读取并处理文件内容
 		while (!fin.eof()) {
 			if (fin.peek() == '*') {  // 检查是否是关键字行
@@ -699,13 +708,19 @@ namespace EnSC {
 					std::cout << "清除步骤 " << exdyna.steps.back().name << " 的所有位移边界条件 (op=NEW)" << std::endl;
 				}
 			} else {
-				// 如果不在步骤定义中，则清除全局边界条件
+				// 如果不在步骤定义中，则清除Initial步骤的边界条件（不再使用全局边界条件）
 				if (str.find("TYPE=VELOCITY") != std::string::npos) {
-					exdyna.currentBoundary.vel_nodes.clear();
-					std::cout << "清除所有全局速度边界条件 (op=NEW)" << std::endl;
+					if (!exdyna.steps.empty()) {
+						exdyna.steps.front().boundary.vel_nodes.clear();
+						exdyna.steps.front().resetVelBoundary = true;
+						std::cout << "清除Initial步骤的所有速度边界条件 (op=NEW)" << std::endl;
+					}
 				} else {
-					exdyna.currentBoundary.spc_nodes.clear();
-					std::cout << "清除所有全局位移边界条件 (op=NEW)" << std::endl;
+					if (!exdyna.steps.empty()) {
+						exdyna.steps.front().boundary.spc_nodes.clear();
+						exdyna.steps.front().resetSpcBoundary = true;
+						std::cout << "清除Initial步骤的所有位移边界条件 (op=NEW)" << std::endl;
+					}
 				}
 			}
 		}
@@ -722,16 +737,29 @@ namespace EnSC {
 			isEmptyBoundaryCommand = true;
 			
 			// 即使是空命令，也需要记录已经处理过对应类型的重置操作
-			if (op_new && currentState == ParseState::STEP_DEFINITION && !exdyna.steps.empty()) {
-				// 根据是否有velocity类型参数设置对应的重置标志
-				if (str.find("TYPE=VELOCITY") != std::string::npos) {
-					exdyna.steps.back().resetVelBoundary = true;
-					std::cout << "遇到空的速度边界条件命令: " << str << " (仅执行重置操作)" << std::endl;
-					std::cout << "为步骤 " << exdyna.steps.back().name << " 设置速度边界重置标志" << std::endl;
+			if (op_new) {
+				if (currentState == ParseState::STEP_DEFINITION && !exdyna.steps.empty()) {
+					// 根据是否有velocity类型参数设置对应的重置标志
+					if (str.find("TYPE=VELOCITY") != std::string::npos) {
+						exdyna.steps.back().resetVelBoundary = true;
+						std::cout << "遇到空的速度边界条件命令: " << str << " (仅执行重置操作)" << std::endl;
+						std::cout << "为步骤 " << exdyna.steps.back().name << " 设置速度边界重置标志" << std::endl;
+					} else {
+						exdyna.steps.back().resetSpcBoundary = true;
+						std::cout << "遇到空的位移边界条件命令: " << str << " (仅执行重置操作)" << std::endl;
+						std::cout << "为步骤 " << exdyna.steps.back().name << " 设置位移边界重置标志" << std::endl;
+					}
 				} else {
-					exdyna.steps.back().resetSpcBoundary = true;
-					std::cout << "遇到空的位移边界条件命令: " << str << " (仅执行重置操作)" << std::endl;
-					std::cout << "为步骤 " << exdyna.steps.back().name << " 设置位移边界重置标志" << std::endl;
+					// 如果不在特定步骤中，则设置Initial步骤的重置标志
+					if (!exdyna.steps.empty()) {
+						if (str.find("TYPE=VELOCITY") != std::string::npos) {
+							exdyna.steps.front().resetVelBoundary = true;
+							std::cout << "遇到空的速度边界条件命令: " << str << " (为Initial步骤设置重置标志)" << std::endl;
+						} else {
+							exdyna.steps.front().resetSpcBoundary = true;
+							std::cout << "遇到空的位移边界条件命令: " << str << " (为Initial步骤设置重置标志)" << std::endl;
+						}
+					}
 				}
 			} else {
 				if (str.find("TYPE=VELOCITY") != std::string::npos) {
@@ -897,8 +925,8 @@ namespace EnSC {
 			toUpperCase(str);
             std::cout << "  解析位移边界行: " << str << std::endl;
 			
-			// 创建临时约束数据
-			std::pair<std::vector<std::size_t>, std::array<std::size_t, 3>> boundary_data;
+			// 创建临时约束数据 - 修改为使用std::string存储节点集名称
+			std::pair<std::string, std::array<std::size_t, 3>> boundary_data;
 			std::istringstream iss(str);
 			std::string token;
 
@@ -907,25 +935,15 @@ namespace EnSC {
 				// 使用预定义的节点集合
 				std::getline(iss, token, ',');
 				std::cout << "  使用节点集: " << token << std::endl;
-				
-				// 检查节点集是否存在
-				if (exdyna.map_set_node_list.find(token) != exdyna.map_set_node_list.end()) {
-					boundary_data.first = exdyna.map_set_node_list[token];
-				} else {
-					std::cerr << "  警告: 找不到节点集 " << token << std::endl;
-					continue; // 跳过这一行
-				}
+				// 保存集合名称，不再查找集合中的节点
+				boundary_data.first = token;
 			}
 			else {
 				// 单个节点
 				std::getline(iss, token, ',');
 				std::cout << "  使用单个节点: " << token << std::endl;
-				try {
-					boundary_data.first.push_back(std::stoi(token) - 1);
-				} catch (const std::exception& e) {
-					std::cerr << "  警告: 解析节点索引出错: " << e.what() << std::endl;
-					continue; // 跳过这一行
-				}
+				// 使用#前缀表示单个节点
+				boundary_data.first = "#" + token;
 			}
 
 			// 处理特殊约束类型
@@ -994,14 +1012,15 @@ namespace EnSC {
             
 			// 添加到当前步骤的约束列表中
 			if (currentState == ParseState::STEP_DEFINITION && !exdyna.steps.empty()) {
-				// 只添加到当前解析中的步骤
+				// 添加到当前解析中的步骤
 				exdyna.steps.back().boundary.spc_nodes.push_back(boundary_data);
-				std::cout << "在步骤 " << exdyna.steps.back().name << " 添加固定约束 (共 " 
-                          << boundary_data.first.size() << " 个节点)" << std::endl;
+				std::cout << "在步骤 " << exdyna.steps.back().name << " 添加固定约束" << std::endl;
 			} else {
-				// 如果不在Step定义中，则添加到全局约束
-				exdyna.currentBoundary.spc_nodes.push_back(boundary_data);
-				std::cout << "添加全局固定约束 (共 " << boundary_data.first.size() << " 个节点)" << std::endl;
+				// 如果不在Step定义中，则添加到Initial步骤，而不是全局约束
+				if (!exdyna.steps.empty()) {
+					exdyna.steps.front().boundary.spc_nodes.push_back(boundary_data);
+					std::cout << "在Initial步骤添加固定约束" << std::endl;
+				}
 			}
 		}
 		
@@ -1056,28 +1075,14 @@ namespace EnSC {
 					set_name = instance_name + "." + node_ref;
 				}
 				
-				// 检查节点集是否存在
-				if (exdyna.map_set_node_list.find(set_name) != exdyna.map_set_node_list.end()) {
-					exdyna.ini_vel_generation.back().first = exdyna.map_set_node_list[set_name];
-					std::cout << "为节点集 " << set_name << " 设置初始速度" << std::endl;
-				} else {
-					std::cerr << "警告: 找不到节点集 " << set_name << "，跳过初始速度设置" << std::endl;
-					exdyna.ini_vel_generation.pop_back();
-					continue;
-				}
+				// 保存集合名称，而不是查找节点索引
+				exdyna.ini_vel_generation.back().first = set_name;
+				std::cout << "为节点集 " << set_name << " 设置初始速度" << std::endl;
 			}
 			else {
-				// 单个节点，转换索引（从1到0）
-				try {
-					int node_index = std::stoi(node_ref) - 1;
-					exdyna.ini_vel_generation.back().first.push_back(node_index);
-					std::cout << "为节点 " << (node_index + 1) << " 设置初始速度" << std::endl;
-				}
-				catch (const std::exception& e) {
-					std::cerr << "警告: 解析节点索引时出错: " << node_ref << std::endl;
-					exdyna.ini_vel_generation.pop_back();
-					continue;
-				}
+				// 单个节点，直接保存完整编号作为特殊的"集合名称"
+				exdyna.ini_vel_generation.back().first = "#" + node_ref; // 使用#前缀标记它是单个节点ID
+				std::cout << "为节点 " << node_ref << " 设置初始速度" << std::endl;
 			}
 
 			// 读取自由度索引和速度值
@@ -1137,39 +1142,24 @@ namespace EnSC {
 			std::istringstream iss(str);
 			std::string token;
 
-			// 创建临时结构存储速度边界条件
-			std::pair<std::array<std::size_t, 2>, Types::Real> temp_pair;
-			temp_pair.first[0] = 0;
-			temp_pair.first[1] = 0;
-			temp_pair.second = 0.0;
-			
-			std::pair<std::vector<std::size_t>, std::pair<std::array<std::size_t, 2>, Types::Real>> boundary_data;
-			boundary_data.second = temp_pair;
+			// 创建临时结构存储速度边界条件 - 修改为使用std::string存储节点集名称
+			std::pair<std::string, std::pair<std::array<std::size_t, 2>, Types::Real>> boundary_data;
+			boundary_data.second.first[0] = 0;
+			boundary_data.second.first[1] = 0;
+			boundary_data.second.second = 0.0;
 			
 			// 处理节点集合或单个节点
 			if (str.find("SET-") != std::string::npos) {
 				std::getline(iss, token, ',');
 				std::cout << "  使用节点集: " << token << std::endl;
-				
-				// 检查节点集是否存在
-				if (exdyna.map_set_node_list.find(token) != exdyna.map_set_node_list.end()) {
-					boundary_data.first = exdyna.map_set_node_list[token];
-				} else {
-					std::cerr << "  警告: 找不到节点集 " << token << std::endl;
-					continue; // 跳过这一行
-				}
+				// 保存集合名称，不再查找集合中的节点
+				boundary_data.first = token;
 			}
 			else {
 				std::getline(iss, token, ',');
 				std::cout << "  使用单个节点: " << token << std::endl;
-				try {
-					std::vector<std::size_t> temp_vector;
-					temp_vector.emplace_back(std::stoi(token) - 1);
-					boundary_data.first = temp_vector;
-				} catch (const std::exception& e) {
-					std::cerr << "  警告: 解析节点索引出错: " << e.what() << std::endl;
-					continue; // 跳过这一行
-				}
+				// 使用#前缀表示单个节点
+				boundary_data.first = "#" + token;
 			}
 
 			// 读取自由度信息
@@ -1200,16 +1190,17 @@ namespace EnSC {
 				std::cout << "  默认速度值: 0.0" << std::endl;
 			}
             
-			// 添加到当前步骤的约束列表中
+			// 添加到对应的数据结构中
 			if (currentState == ParseState::STEP_DEFINITION && !exdyna.steps.empty()) {
-				// 只添加到当前解析中的步骤
+				// 添加到当前步骤的约束列表
 				exdyna.steps.back().boundary.vel_nodes.push_back(boundary_data);
-				std::cout << "在步骤 " << exdyna.steps.back().name << " 添加速度约束 (共 " 
-                          << boundary_data.first.size() << " 个节点)" << std::endl;
+				std::cout << "在步骤 " << exdyna.steps.back().name << " 添加速度约束" << std::endl;
 			} else {
-				// 如果不在Step定义中，则添加到全局约束
-				exdyna.currentBoundary.vel_nodes.push_back(boundary_data);
-				std::cout << "添加全局速度约束 (共 " << boundary_data.first.size() << " 个节点)" << std::endl;
+				// 如果不在Step定义中，则添加到Initial步骤，而不是全局约束
+				if (!exdyna.steps.empty()) {
+					exdyna.steps.front().boundary.vel_nodes.push_back(boundary_data);
+					std::cout << "在Initial步骤添加速度约束" << std::endl;
+				}
 			}
 		}
 		

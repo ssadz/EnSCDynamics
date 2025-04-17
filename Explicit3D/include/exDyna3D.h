@@ -182,7 +182,7 @@ namespace EnSC {
 		const Types::Real volRateThreshold = static_cast<Types::Real>(1e-10);
 
 		// --- 初始条件和节点集合数据 ---
-		std::vector<std::pair<std::vector<std::size_t>, std::pair<std::size_t, Types::Real>>> ini_vel_generation; // 初始速度生成节点集合
+		std::vector<std::pair<std::string, std::pair<std::size_t, Types::Real>>> ini_vel_generation; // 初始速度生成节点集名称
 		std::map<int, int> mPart_PID_MID;              // Part ID 到 Material ID 映射 (瞬时存储)
 		std::map<std::string, std::vector<std::size_t>> map_set_node_list; // 节点集合到节点数组映射
 		std::map<unsigned int, unsigned int> map_set_part_ID; // Part Set ID 映射? (瞬时存储)
