@@ -180,12 +180,6 @@
 7850.,
 *Elastic
  2.06e+11, 0.3
-** 
-** PREDEFINED FIELDS
-** 
-** Name: Predefined Field-1   Type: Velocity
-*Initial Conditions, type=VELOCITY
-Set-1, 1, 1.
 ** ----------------------------------------------------------------
 ** 
 ** STEP: Step-1
@@ -195,93 +189,6 @@ Set-1, 1, 1.
 , 0.1
 *Bulk Viscosity
 0.06, 1.2
-** 
-** BOUNDARY CONDITIONS
-** 
-** Name: BC-1 Type: Symmetry/Antisymmetry/Encastre
-*Boundary
-Set-2, PINNED
-** 
-** LOADS
-** 
-** Name: Load-1   Type: Gravity
-*Dload, op=NEW
-, GRAV, 9.8, 1., 0., 0.
-** 
-** OUTPUT REQUESTS
-** 
-*Restart, write, number interval=1, time marks=NO
-** 
-** FIELD OUTPUT: F-Output-1
-** 
-*Output, field, variable=PRESELECT
-** 
-** HISTORY OUTPUT: H-Output-1
-** 
-*Output, history, variable=PRESELECT
-*End Step
-** ----------------------------------------------------------------
-** 
-** STEP: Step-2
-** 
-*Step, name=Step-2, nlgeom=YES
-*Dynamic, Explicit
-, 0.2
-*Bulk Viscosity
-0.06, 1.2
-** 
-** BOUNDARY CONDITIONS
-** 
-** Name: BC-1 Type: Symmetry/Antisymmetry/Encastre
-*Boundary, op=NEW
-** Name: BC-2 Type: Velocity/Angular velocity
-*Boundary, op=NEW, type=VELOCITY
-Set-3, 2, 2, 0.1
-** 
-** LOADS
-** 
-** Name: Load-1   Type: Gravity
-*Dload, op=NEW
-** Name: Load-2   Type: Gravity
-*Dload, op=NEW
-, GRAV, 9.8, 0., -1., 0.
-** 
-** OUTPUT REQUESTS
-** 
-*Restart, write, number interval=1, time marks=NO
-** 
-** FIELD OUTPUT: F-Output-1
-** 
-*Output, field, variable=PRESELECT
-** 
-** HISTORY OUTPUT: H-Output-1
-** 
-*Output, history, variable=PRESELECT
-*End Step
-** ----------------------------------------------------------------
-** 
-** STEP: Step-3
-** 
-*Step, name=Step-3, nlgeom=YES
-*Dynamic, Explicit
-, 0.1
-*Bulk Viscosity
-0.06, 1.2
-** 
-** BOUNDARY CONDITIONS
-** 
-** Name: BC-3 Type: Symmetry/Antisymmetry/Encastre
-*Boundary
-Set-5, PINNED
-** Name: BC-4 Type: Symmetry/Antisymmetry/Encastre
-*Boundary
-Set-6, PINNED
-** 
-** LOADS
-** 
-** Name: Load-2   Type: Gravity
-*Dload, op=NEW
-, GRAV, 9.8, 0., -1., 0.
 ** 
 ** OUTPUT REQUESTS
 ** 
