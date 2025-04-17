@@ -147,6 +147,15 @@ namespace EnSC {
 		InpInstance inst;
 		inst.name = instance_name;
 		inst.part_name = part_name;
+		
+		// 初始化新增的成员
+		inst.translation = {0.0, 0.0, 0.0}; // 默认无平移
+		inst.node_start_index = 0;          // 将在transferToExDyna中设置
+		inst.element_start_index = 0;       // 将在transferToExDyna中设置
+		
+		// 处理可能的平移信息（这里简化处理，实际中可能需要解析更多参数）
+		// TODO: 实现解析ABAQUS INP文件中的平移和旋转变换
+		
 		currentAssemblyPtr->instances.push_back(inst);
 		return true;
 	}
@@ -644,10 +653,27 @@ namespace EnSC {
 			for (std::size_t i = start; i <= end; i += step) set_nodes.push_back(i);
 		}
 		for (auto& idx : set_nodes) idx -= 1;
+		
 		if (currentPartPtr && currentState == ParseState::PART_DEFINITION) {
+			// 在Part定义中，直接添加到Part的节点集
 			currentPartPtr->node_sets[set_name] = set_nodes;
-		} else if (currentAssemblyPtr && currentState == ParseState::ASSEMBLY_DEFINITION) {
-			currentAssemblyPtr->node_sets[set_name] = set_nodes;
+		} 
+		else if (currentAssemblyPtr && currentState == ParseState::ASSEMBLY_DEFINITION) {
+			// 在Assembly定义中，需要考虑实例
+			if (!instance_name.empty()) {
+				// 如果指定了实例，添加到Assembly的节点集中特定实例下
+				currentAssemblyPtr->node_sets[set_name][instance_name] = set_nodes;
+				std::cout << "为实例 " << instance_name << " 添加节点集 " << set_name 
+					      << " (包含 " << set_nodes.size() << " 个节点)" << std::endl;
+			} 
+			else {
+				// 没有指定实例，视为装配级别的全局节点集 (旧行为保持兼容)
+				std::map<std::string, std::vector<std::size_t>> empty_map;
+				empty_map["__GLOBAL__"] = set_nodes; // 使用特殊键表示全局节点
+				currentAssemblyPtr->node_sets[set_name] = empty_map;
+				std::cout << "添加装配级全局节点集 " << set_name 
+					      << " (包含 " << set_nodes.size() << " 个节点)" << std::endl;
+			}
 		}
 		return true;
 	}
@@ -1294,10 +1320,27 @@ namespace EnSC {
 			}
 		}
 		for (auto& idx : element_indices) idx -= 1;
+		
 		if (currentPartPtr && currentState == ParseState::PART_DEFINITION) {
+			// 在Part定义中，直接添加到Part的单元集
 			currentPartPtr->element_sets[set_name] = element_indices;
-		} else if (currentAssemblyPtr && currentState == ParseState::ASSEMBLY_DEFINITION) {
-			currentAssemblyPtr->element_sets[set_name] = element_indices;
+		} 
+		else if (currentAssemblyPtr && currentState == ParseState::ASSEMBLY_DEFINITION) {
+			// 在Assembly定义中，需要考虑实例
+			if (!instance_name.empty()) {
+				// 如果指定了实例，添加到Assembly的单元集中特定实例下
+				currentAssemblyPtr->element_sets[set_name][instance_name] = element_indices;
+				std::cout << "为实例 " << instance_name << " 添加单元集 " << set_name 
+					      << " (包含 " << element_indices.size() << " 个单元)" << std::endl;
+			} 
+			else {
+				// 没有指定实例，视为装配级别的全局单元集 (旧行为保持兼容)
+				std::map<std::string, std::vector<std::size_t>> empty_map;
+				empty_map["__GLOBAL__"] = element_indices; // 使用特殊键表示全局单元
+				currentAssemblyPtr->element_sets[set_name] = empty_map;
+				std::cout << "添加装配级全局单元集 " << set_name 
+					      << " (包含 " << element_indices.size() << " 个单元)" << std::endl;
+			}
 		}
 		return true;
 	}
@@ -1558,8 +1601,11 @@ namespace EnSC {
 		
 		// 3. 首先处理所有Part的数据
 		std::map<std::string, size_t> partNodeOffset; // 记录每个Part节点的全局偏移量
+		std::map<std::string, size_t> partElementOffset; // 记录每个Part单元的全局偏移量
 		size_t globalNodeIndex = 0;
+		size_t globalElementIndex = 0;
 		
+		// 3.1 添加节点到exdyna
 		for (const auto& part : inp_data.parts) {
 			// 记录当前Part的节点偏移量
 			partNodeOffset[part.name] = globalNodeIndex;
@@ -1571,10 +1617,10 @@ namespace EnSC {
 			}
 		}
 		
-		// 4. 添加单元到exdyna
-		size_t globalElementIndex = 0;
-		
+		// 3.2 添加单元到exdyna
 		for (const auto& part : inp_data.parts) {
+			// 记录当前Part的单元偏移量
+			partElementOffset[part.name] = globalElementIndex;
 			size_t partOffset = partNodeOffset[part.name];
 			
 			// 添加单元到exdyna
@@ -1600,15 +1646,15 @@ namespace EnSC {
 			}
 		}
 		
-		// 5. 处理节点集和单元集 (如有装配，则处理装配级别的集合和节点映射)
+		// 4. 处理装配中的实例，更新实例的索引信息
 		if (!inp_data.assemblies.empty()) {
 			std::cout << "处理的装配数量: " << inp_data.assemblies.size() << std::endl;
 			
-			for (const auto& assembly : inp_data.assemblies) {
+			for (auto& assembly : inp_data.assemblies) {
 				std::cout << "- 处理装配 '" << assembly.name << "' 及其实例" << std::endl;
 				
 				// 处理实例
-				for (const auto& instance : assembly.instances) {
+				for (auto& instance : assembly.instances) {
 					std::cout << "  - 实例 '" << instance.name << "' 引用部件 '" << instance.part_name << "'" << std::endl;
 					
 					// 找到对应的部件
@@ -1616,36 +1662,88 @@ namespace EnSC {
 						[&](const InpPart& p) { return p.name == instance.part_name; });
 					
 					if (partIt != inp_data.parts.end()) {
-						size_t partOffset = partNodeOffset[partIt->name];
+						// 设置实例的节点和单元起始索引
+						instance.node_start_index = partNodeOffset[instance.part_name];
+						instance.element_start_index = partElementOffset[instance.part_name];
 						
-						// 处理此实例的节点集
-						for (const auto& nodeSetPair : partIt->node_sets) {
-							std::string globalSetName = instance.name + "." + nodeSetPair.first;
-							std::vector<std::size_t> globalNodeSet;
-							
-							for (const auto& localNodeIdx : nodeSetPair.second) {
-								globalNodeSet.push_back(localNodeIdx + partOffset);
-							}
-							
-							// 添加到exdyna的节点集映射
-							exdyna.map_set_node_list[globalSetName] = globalNodeSet;
-							std::cout << "    添加节点集: " << globalSetName << " 包含 " << globalNodeSet.size() << " 个节点" << std::endl;
-						}
+						std::cout << "    节点起始索引: " << instance.node_start_index 
+						          << ", 单元起始索引: " << instance.element_start_index << std::endl;
 						
-						// 处理此实例的单元集
-						// 类似节点集的处理...但需要映射单元索引
+						// 处理坐标变换（平移）
+						// 注意：这里简化处理，假设不需要坐标变换，在实际应用中可以添加
+					} else {
+						std::cerr << "  警告: 找不到部件 '" << instance.part_name << "'" << std::endl;
 					}
 				}
 				
-				// 处理装配级别的节点集
+				// 5. 处理装配级别的节点集和单元集
+				// 5.1 处理节点集
 				for (const auto& nodeSetPair : assembly.node_sets) {
-					// 注意：装配级别的节点集通常已经是全局索引，不需要再调整
-					exdyna.map_set_node_list[nodeSetPair.first] = nodeSetPair.second;
-					std::cout << "  添加装配级节点集: " << nodeSetPair.first << " 包含 " << nodeSetPair.second.size() << " 个节点" << std::endl;
+					const std::string& setName = nodeSetPair.first;
+					const auto& instanceMap = nodeSetPair.second;
+					
+					// 合并所有实例的节点集到一个全局节点集
+					std::vector<std::size_t> globalNodeSet;
+					
+					for (const auto& instPair : instanceMap) {
+						const std::string& instName = instPair.first;
+						const auto& localIndices = instPair.second;
+						
+						if (instName == "__GLOBAL__") {
+							// 全局节点索引直接添加
+							globalNodeSet.insert(globalNodeSet.end(), localIndices.begin(), localIndices.end());
+						} else {
+							// 查找实例
+							auto instIt = std::find_if(assembly.instances.begin(), assembly.instances.end(),
+								[&](const InpInstance& inst) { return inst.name == instName; });
+								
+							if (instIt != assembly.instances.end()) {
+								// 添加转换后的节点索引
+								for (const auto& localIdx : localIndices) {
+									globalNodeSet.push_back(localIdx + instIt->node_start_index);
+								}
+							}
+						}
+					}
+					
+					// 添加到exdyna的节点集映射
+					exdyna.map_set_node_list[setName] = globalNodeSet;
+					std::cout << "  添加装配级节点集: " << setName << " 包含 " << globalNodeSet.size() << " 个节点" << std::endl;
 				}
 				
-				// 处理装配级别的单元集
-				// 同样需要处理单元索引映射
+				// 5.2 处理单元集
+				for (const auto& elemSetPair : assembly.element_sets) {
+					const std::string& setName = elemSetPair.first;
+					const auto& instanceMap = elemSetPair.second;
+					
+					// 合并所有实例的单元集到一个全局单元集
+					std::vector<std::size_t> globalElemSet;
+					
+					for (const auto& instPair : instanceMap) {
+						const std::string& instName = instPair.first;
+						const auto& localIndices = instPair.second;
+						
+						if (instName == "__GLOBAL__") {
+							// 全局单元索引直接添加
+							globalElemSet.insert(globalElemSet.end(), localIndices.begin(), localIndices.end());
+						} else {
+							// 查找实例
+							auto instIt = std::find_if(assembly.instances.begin(), assembly.instances.end(),
+								[&](const InpInstance& inst) { return inst.name == instName; });
+								
+							if (instIt != assembly.instances.end()) {
+								// 添加转换后的单元索引
+								for (const auto& localIdx : localIndices) {
+									globalElemSet.push_back(localIdx + instIt->element_start_index);
+								}
+							}
+						}
+					}
+					
+					// 添加到exdyna的单元集映射
+					exdyna.map_set_ele_list[setName] = globalElemSet;
+					std::cout << "  添加装配级单元集: " << setName << " 包含 " << globalElemSet.size() << " 个单元" << std::endl;
+				}
 			}
 		}
 		

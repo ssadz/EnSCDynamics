@@ -22,15 +22,22 @@ struct InpPart {
 struct InpInstance {
     std::string name;      // 实例名
     std::string part_name; // 引用的Part名
-    // 可扩展：变换矩阵、位移等
+    // 新增：坐标变换相关
+    std::array<Types::Real, 3> translation; // 平移向量
+    // 新增：节点和单元索引偏移
+    std::size_t node_start_index;    // 全局节点起始索引
+    std::size_t element_start_index; // 全局单元起始索引
 };
 
 // Assembly结构
 struct InpAssembly {
     std::string name; // 装配名
     std::vector<InpInstance> instances; // 实例列表
-    std::map<std::string, std::vector<std::size_t>> node_sets; // 节点集（装配级）
-    std::map<std::string, std::vector<std::size_t>> element_sets; // 单元集（装配级）
+    // 修改：节点集和单元集的存储结构
+    // 从 map<string, vector<size_t>> 改为 map<string, map<string, vector<size_t>>>
+    // 第一个string是集合名，第二个string是实例名，vector是该实例中的索引列表
+    std::map<std::string, std::map<std::string, std::vector<std::size_t>>> node_sets; // 节点集（装配级）
+    std::map<std::string, std::map<std::string, std::vector<std::size_t>>> element_sets; // 单元集（装配级）
     // 可扩展：表面、section等
 };
 
