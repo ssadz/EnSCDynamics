@@ -23,74 +23,14 @@
 #include "dataOut.h"        // 数据输出
 #include "dataIn.h"         // 数据输入
 #include "FSI_share_data.h" // FSI 共享数据结构
+#include "Material_elastic.h" // 材料属性
+#include "BoundaryCondition.h" // 边界条件
+#include "StepData.h"        // 步骤数据
 
 namespace EnSC {
 
 	// --- 前向声明 ---
 	class DataIn;
-
-	// --- 材料属性结构体 ---
-	struct Material_elastic {
-		void update(); // 更新派生材料属性的方法
-
-		// 基本属性
-		Types::Real E = static_cast<Types::Real>(2.06e11); // 杨氏模量
-		Types::Real rho = static_cast<Types::Real>(7850.0); // 密度
-		Types::Real v = static_cast<Types::Real>(0.3);   // 泊松比
-
-		// 派生属性
-		Types::Real G;      // 剪切模量 = E / (2 * (1 + v))
-		Types::Real K;      // 体积模量 = E / (3 * (1 - 2 * v))
-		Types::Real lambda; // 拉梅第一参数 = (E * v) / ((1 + v) * (1 - 2 * v))
-		Types::Real WOS;    // 声速 (材料参数)
-	};
-
-	// --- 边界条件结构体 ---
-	struct BoundaryCondition {
-		// 位移约束节点集合
-		std::vector<std::pair<std::vector<std::size_t>, std::array<std::size_t, 3>>> spc_nodes;
-		
-		// 速度约束节点集合
-		std::vector<std::pair<std::vector<std::size_t>, std::pair<std::array<std::size_t, 2>, Types::Real>>> vel_nodes;
-	};
-
-	// --- 步骤数据结构 ---
-	struct StepData {
-		std::string name;                 // 步骤名称
-		Types::Real timePeriod;           // 时间周期
-		BoundaryCondition boundary;       // 边界条件
-		bool resetSpcBoundary;            // 是否重置了位移边界条件（Boundary, op=NEW)
-		// 需要在调试打印时输出该值
-		bool resetVelBoundary;            // 是否重置了速度边界条件（Boundary, op=NEW, type=VELOCITY)
-		// 需要在调试打印时输出该值
-		
-		// 载荷相关
-		std::tuple<bool, std::string, Types::Real, Types::Real, Types::Real, Types::Real> gravity; // 重力
-		std::vector<std::tuple<std::string, std::string, std::string, Types::Real>> dsload;        // 分布外力
-		bool resetDload;                  // 是否重置了分布载荷（DLOAD, op=NEW)
-		// 需要在调试打印时输出该值
-		bool resetDsload;                 // 是否重置了分布面载荷（DSLOAD, op=NEW)
-		// 需要在调试打印时输出该值
-		
-		// 构造函数，初始化默认值
-		StepData() : timePeriod(0.0), resetSpcBoundary(false), resetVelBoundary(false), 
-		             resetDload(false), resetDsload(false) {
-			// 初始化gravity元组的第一个元素（使能标志）为false
-			std::get<0>(gravity) = false;
-		}
-		// 其他特定于步骤的数据可以在这里添加
-	};
-
-	// --- 单元数据结构体 (模板前向声明) ---
-	// template<std::size_t n_integral_points> // 这个结构体定义似乎被移除 (改为 SoA)
-	// struct CellDataHex;                     // 这个定义可能并不需要前向声明
-
-	// --- 外部节点力结构体 (似乎未使用，可能需清理) ---
-	// struct ExternalNodeForce {
-	// 	std::vector<Types::Vertex_index> external_node_force_nodeID; // 节点ID
-	// 	std::vector<int> external_node_force_direction;         // 作用方向
-	// 	std::vector<Types::Real> external_node_force_value;         // 力的大小
-	// };
 
 	// --- 主求解器类 ---
 	class exDyna3D {
@@ -271,7 +211,6 @@ namespace EnSC {
 		
 		// --- 当前边界条件 ---
 		BoundaryCondition currentBoundary;      // 当前步骤的边界条件
-		//BoundaryCondition prevBoundary;         // 上一步骤的边界条件
 
 	};
 
