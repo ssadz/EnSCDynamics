@@ -1,2 +1,2 @@
 #inp file name eg. t1.inp
-test2.inp
+test_step.inp

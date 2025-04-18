@@ -211,6 +211,7 @@ namespace EnSC {
 		
 		// --- 当前边界条件 ---
 		BoundaryCondition currentBoundary;      // 当前步骤的边界条件
+		BoundaryCondition prevBoundary;         // 前一步骤的边界条件
 
 	};
 

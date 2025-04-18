@@ -374,8 +374,10 @@
  181,  216,    1
 *Elset, elset=Set-2, instance=Part-1-1, generate
  101,  125,    1
-*Nset, nset=Set-3, instance=Part-1-1
-  1, 31
+*Nset, nset=Set-3, instance=Part-1-1, generate
+  6,  36,   6
+*Elset, elset=Set-3, instance=Part-1-1, generate
+  5,  25,   5
 *End Assembly
 ** 
 ** MATERIALS
@@ -386,11 +388,17 @@
 *Elastic
  2.06e+11, 0.3
 ** 
+** BOUNDARY CONDITIONS
+** 
+** Name: BC-1 Type: Symmetry/Antisymmetry/Encastre
+*Boundary
+Set-2, PINNED
+** 
 ** PREDEFINED FIELDS
 ** 
 ** Name: Predefined Field-1   Type: Velocity
 *Initial Conditions, type=VELOCITY
-Set-1, 1, 1.
+Set-1, 2, -0.25
 ** ----------------------------------------------------------------
 ** 
 ** STEP: Step-1
@@ -400,12 +408,6 @@ Set-1, 1, 1.
 , 0.1
 *Bulk Viscosity
 0.06, 1.2
-** 
-** BOUNDARY CONDITIONS
-** 
-** Name: BC-1 Type: Symmetry/Antisymmetry/Encastre
-*Boundary
-Set-2, PINNED
 ** 
 ** OUTPUT REQUESTS
 ** 
@@ -425,7 +427,7 @@ Set-2, PINNED
 ** 
 *Step, name=Step-2, nlgeom=YES
 *Dynamic, Explicit
-, 0.2
+, 0.15
 *Bulk Viscosity
 0.06, 1.2
 ** 
@@ -433,7 +435,7 @@ Set-2, PINNED
 ** 
 ** Name: BC-2 Type: Velocity/Angular velocity
 *Boundary, type=VELOCITY
-Set-3, 2, 2, 0.1
+Set-3, 1, 1, -0.05
 ** 
 ** OUTPUT REQUESTS
 ** 
