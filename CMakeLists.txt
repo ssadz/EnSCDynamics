@@ -97,6 +97,18 @@ else()
     message(FATAL_ERROR "未能找到 spdlog 库。请确保它位于 '${CMAKE_SOURCE_DIR}/spdlog' 并且包含 CMake 配置文件。或者通过 CMake 参数 -Dspdlog_DIR=/path/to/spdlog/lib/cmake 指定其位置。")
 endif()
 
+# --- 根据构建类型定义编译宏 ---
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_definitions(-D_DEBUG)
+    message(STATUS "定义 _DEBUG 宏用于日志等级控制")
+elseif(CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+    add_definitions(-DRELWITHDEBINFO)
+    message(STATUS "定义 RELWITHDEBINFO 宏用于日志等级控制")
+elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
+    # Release 模式不需要特殊宏，日志系统默认会禁用输出
+    message(STATUS "Release 模式 - 日志输出将被禁用")
+endif()
+
 # 添加 Explicit3D 子目录
 add_subdirectory(Explicit3D)
 
