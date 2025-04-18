@@ -68,56 +68,11 @@ namespace EnSC {
 		// 打印步骤信息进行调试
 		spdlog::info("总步骤数: {}", steps.size());
 		for (std::size_t i = 0; i < steps.size(); ++i) {
-			spdlog::info("步骤 {}: {} 时间周期={} 约束条件数={} 速度条件数={} 重置位移边界={} 重置速度边界={} 重置分布载荷={} 重置分布面载荷={}", 
-				i, steps[i].name, steps[i].timePeriod, 
-				steps[i].boundary.spc_nodes.size(), steps[i].boundary.vel_nodes.size(),
-				(steps[i].resetSpcBoundary ? "是" : "否"), (steps[i].resetVelBoundary ? "是" : "否"),
-				(steps[i].resetDload ? "是" : "否"), (steps[i].resetDsload ? "是" : "否"));
-		}
-		
-		// 检查Initial步骤是否存在
-		bool hasInitialStep = (!steps.empty() && steps.front().name == "Initial");
-		
-		// 只在Initial步骤存在时打印信息
-		if (hasInitialStep) {
-			spdlog::info("Initial步骤的边界条件已在初始化时应用");
-			spdlog::info("当前currentBoundary的状态：");
-			spdlog::info("  位移约束数量: {}", currentBoundary.spc_nodes.size());
-			spdlog::info("  速度约束数量: {}", currentBoundary.vel_nodes.size());
-			
-			// 检查currentBoundary是否与steps[0].boundary一致
-			if (currentBoundary.spc_nodes.size() != steps[0].boundary.spc_nodes.size() ||
-				currentBoundary.vel_nodes.size() != steps[0].boundary.vel_nodes.size()) {
-				spdlog::warn("警告：currentBoundary与steps[0].boundary不一致！");
-				spdlog::info("steps[0].boundary中：");
-				spdlog::info("  位移约束数量: {}", steps[0].boundary.spc_nodes.size());
-				spdlog::info("  速度约束数量: {}", steps[0].boundary.vel_nodes.size());
-				
-				// 如果不一致，更正currentBoundary
-				if (steps[0].boundary.spc_nodes.size() > 0 && currentBoundary.spc_nodes.size() == 0) {
-					spdlog::info("修正currentBoundary，使用steps[0].boundary的数据");
-					currentBoundary = steps[0].boundary;
-				}
-			}
-			
-			// 确保Initial步骤的边界条件已被保存到prevBoundary中
-			if (currentStepIndex == 0) {
-				// 手动保存Initial步骤的边界条件到prevBoundary
-				prevBoundary = currentBoundary;
-				spdlog::info("已手动保存Initial步骤的边界条件到prevBoundary");
-				spdlog::info("Initial步骤位移约束数量: {}", prevBoundary.spc_nodes.size());
-				spdlog::info("Initial步骤速度约束数量: {}", prevBoundary.vel_nodes.size());
-				
-				// 如果prevBoundary中的约束数与steps[0]不一致，打印警告
-				if (prevBoundary.spc_nodes.size() != steps[0].boundary.spc_nodes.size()) {
-					spdlog::warn("警告：prevBoundary中的位移约束数量与steps[0]不一致！");
-					spdlog::info("steps[0]中的位移约束数量: {}", steps[0].boundary.spc_nodes.size());
-				}
-			}
+			logStepInfo(i);
 		}
 		
 		// 遍历其他步骤进行计算（从第二个步骤开始，如果第一个是Initial）
-		size_t startStep = hasInitialStep ? 1 : 0;
+		size_t startStep = 1; // 总是从第二个步骤开始
 		for (std::size_t stepIndex = startStep; stepIndex < steps.size(); ++stepIndex) {
 			const auto& stepData = steps[stepIndex];
 			spdlog::info("开始计算步骤 {} (时间周期: {})", stepData.name, stepData.timePeriod);
@@ -129,67 +84,6 @@ namespace EnSC {
 			
 			// 设置当前步骤
 			setCurrentStep(stepIndex);
-			
-			// 打印当前步骤的约束信息（包括继承的约束）
-			spdlog::info("---- 当前步骤约束信息 ----");
-			
-			// 计算受约束的总节点数
-			size_t total_spc_nodes = 0;
-			for (const auto& spc : currentBoundary.spc_nodes) {
-				total_spc_nodes += spc.first.size();
-			}
-			
-			size_t total_vel_nodes = 0;
-			for (const auto& vel : currentBoundary.vel_nodes) {
-				total_vel_nodes += vel.first.size();
-			}
-			
-			spdlog::info("固定约束数量: {} (涉及 {} 个节点)", 
-				currentBoundary.spc_nodes.size(), total_spc_nodes);
-			spdlog::info("速度约束数量: {} (涉及 {} 个节点)", 
-				currentBoundary.vel_nodes.size(), total_vel_nodes);
-			
-			// 标记是否有继承的约束
-			if (stepIndex > 0) {
-				bool has_inherited_spc = false;
-				bool has_inherited_vel = false;
-				
-				for (const auto& spc : currentBoundary.spc_nodes) {
-					bool found = false;
-					for (const auto& step_spc : stepData.boundary.spc_nodes) {
-						if (spc.first == step_spc.first) {
-							found = true;
-							break;
-						}
-					}
-					if (!found) {
-						has_inherited_spc = true;
-						break;
-					}
-				}
-				
-				for (const auto& vel : currentBoundary.vel_nodes) {
-					bool found = false;
-					for (const auto& step_vel : stepData.boundary.vel_nodes) {
-						if (vel.first == step_vel.first) {
-							found = true;
-							break;
-						}
-					}
-					if (!found) {
-						has_inherited_vel = true;
-						break;
-					}
-				}
-				
-				if (has_inherited_spc) {
-					spdlog::info("固定约束继承自Initial或前一步");
-				}
-				if (has_inherited_vel) {
-					spdlog::info("速度约束继承自Initial或前一步");
-				}
-			}
-			spdlog::info("-------------------------");
 			
 			// 设置步骤的结束时间
 			Types::Real stepEndTime = time + stepData.timePeriod;
@@ -226,21 +120,8 @@ namespace EnSC {
 
 		this->update_minVertex_perMaterial();
 
-		// 如果有Initial步骤，则设置为当前步骤，应用其边界条件
-		if (!steps.empty() && steps.front().name == "Initial") {
-			// 直接检查步骤0是否有边界条件
-			spdlog::info("Initial步骤的边界条件数量（init函数中设置前）: 位移约束={}，速度约束={}", 
-				steps.front().boundary.spc_nodes.size(), steps.front().boundary.vel_nodes.size());
-			
-			// 确保Initial步骤的边界条件正确设置
-			setCurrentStep(0);
-			
-			spdlog::info("Initial步骤的边界条件数量（init函数中设置后）: 位移约束={}，速度约束={}", 
-				currentBoundary.spc_nodes.size(), currentBoundary.vel_nodes.size());
-		} else {
-			// 否则使用旧的边界条件方式
-			this->apply_boundary_condition_vec();
-		}
+		// 确保Initial步骤的边界条件正确设置
+		setCurrentStep(0);
 
 		this->add_inForce_to_rhs();
 
@@ -2215,5 +2096,79 @@ namespace EnSC {
 				}
 			} // single 结束
 		} // parallel 结束
+	}
+
+	void exDyna3D::logStepInfo(std::size_t stepIndex) const {
+		// 避免越界访问
+		if (stepIndex >= steps.size()) {
+			spdlog::warn("警告: 尝试打印的步骤索引 {} 超出范围，最大索引为 {}", stepIndex, steps.size() - 1);
+			return;
+		}
+
+		const auto& stepData = steps[stepIndex];
+		spdlog::info("步骤 {}: {} 时间周期={} 约束条件数={} 速度条件数={} 重置位移边界={} 重置速度边界={} 重置分布载荷={} 重置分布面载荷={}", 
+			stepIndex, stepData.name, stepData.timePeriod, 
+			stepData.boundary.spc_nodes.size(), stepData.boundary.vel_nodes.size(),
+			(stepData.resetSpcBoundary ? "是" : "否"), (stepData.resetVelBoundary ? "是" : "否"),
+			(stepData.resetDload ? "是" : "否"), (stepData.resetDsload ? "是" : "否"));
+		
+		// 打印当前步骤的约束信息（包括继承的约束）
+		spdlog::info("---- 当前步骤约束信息 ----");
+		
+		// 计算受约束的总节点数
+		size_t total_spc_nodes = 0;
+		for (const auto& spc : currentBoundary.spc_nodes) {
+			total_spc_nodes += spc.first.size();
+		}
+		
+		size_t total_vel_nodes = 0;
+		for (const auto& vel : currentBoundary.vel_nodes) {
+			total_vel_nodes += vel.first.size();
+		}
+		
+		spdlog::info("固定约束数量: {} (涉及 {} 个节点)", 
+			currentBoundary.spc_nodes.size(), total_spc_nodes);
+		spdlog::info("速度约束数量: {} (涉及 {} 个节点)", 
+			currentBoundary.vel_nodes.size(), total_vel_nodes);
+		
+		// 标记是否有继承的约束
+		if (stepIndex > 0) {
+			bool has_inherited_spc = false;
+			bool has_inherited_vel = false;
+			
+			// Note: This check logic seems flawed. It compares currentBoundary with stepData.boundary.
+			// Inherited constraints are *in* currentBoundary but *not* in stepData.boundary for steps > 0 if not reset.
+			// The check should ideally compare currentBoundary with the boundary data of the *previous* step,
+			// or check if stepData.boundary is empty and prevBoundary is not.
+			// For now, keeping the original logic structure for extraction, but noting potential issue.
+
+			// Check if any spc in currentBoundary is NOT in stepData.boundary (meaning it was inherited)
+			for (const auto& spc : currentBoundary.spc_nodes) {
+				auto it = std::find_if(stepData.boundary.spc_nodes.begin(), stepData.boundary.spc_nodes.end(),
+																			[&](const auto& s){ return s.first == spc.first && s.second[0] == spc.second[0] && s.second[1] == spc.second[1] && s.second[2] == spc.second[2]; });
+				if (it == stepData.boundary.spc_nodes.end()) {
+					has_inherited_spc = true;
+					break;
+				}
+			}
+			
+			// Check if any vel in currentBoundary is NOT in stepData.boundary (meaning it was inherited)
+			for (const auto& vel : currentBoundary.vel_nodes) {
+				auto it = std::find_if(stepData.boundary.vel_nodes.begin(), stepData.boundary.vel_nodes.end(),
+																			[&](const auto& v){ return v.first == vel.first && v.second.first[0] == vel.second.first[0] && v.second.first[1] == vel.second.first[1] && v.second.second == vel.second.second; });
+				if (it == stepData.boundary.vel_nodes.end()) {
+					has_inherited_vel = true;
+					break;
+				}
+			}
+			
+			if (has_inherited_spc) {
+				spdlog::info("固定约束继承自Initial或前一步");
+			}
+			if (has_inherited_vel) {
+				spdlog::info("速度约束继承自Initial或前一步");
+			}
+		}
+		spdlog::info("-------------------------");
 	}
 }

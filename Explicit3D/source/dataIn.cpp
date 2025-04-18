@@ -279,13 +279,11 @@ namespace EnSC {
 		currentAssemblyPtr = nullptr;
 
 		// 创建初始步骤"Initial"，用于收集*Step外的边界条件
-		if (exdyna.steps.empty()) {
-			StepData initialStep;
-			initialStep.name = "Initial";
-			initialStep.timePeriod = 0.0; // 初始步骤的计算时间为0
-			exdyna.steps.push_back(initialStep);
-			spdlog::info("创建初始步骤 'Initial' 用于收集*Step外的条件"); // 替换 std::cout
-		}
+		StepData initialStep;
+		initialStep.name = "Initial";
+		initialStep.timePeriod = 0.0; // 初始步骤的计算时间为0
+		exdyna.steps.push_back(initialStep);
+		spdlog::info("创建初始步骤 'Initial' 用于收集*Step外的条件"); // 替换 std::cout
 
 		// 逐行读取并处理文件内容
 		while (!fin.eof()) {

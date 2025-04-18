@@ -58,6 +58,9 @@ namespace EnSC {
 		// 新增：调试打印set信息
 		void printSetInfo();
 
+		// 新增：打印步骤信息的函数
+		void logStepInfo(std::size_t stepIndex) const;
+
 	protected:
 		// --- 初始化相关方法 ---
 		virtual void init_data();           // 初始化数据结构，分配大小
