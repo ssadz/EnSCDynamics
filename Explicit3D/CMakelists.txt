@@ -39,7 +39,7 @@ file(GLOB EXPLICIT3D_HEADERS "include/*.h")
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     # GCC或Clang编译器
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG")
-    message(STATUS "为Explicit3D (Release模式)设置GCC/Clang优化选项: -O3 -DNDEBUG -march=native")
+    message(STATUS "为Explicit3D (Release模式)设置GCC/Clang优化选项: -O3 -DNDEBUG")
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
     # MSVC编译器
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /DNDEBUG /arch:AVX2 /GL")
@@ -57,8 +57,8 @@ set_target_properties(Explicit3D PROPERTIES
 
 # 设置包含目录
 target_include_directories(Explicit3D PUBLIC 
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
 )
 
 # --- 链接依赖库 ---
@@ -68,6 +68,18 @@ target_link_libraries(Explicit3D PUBLIC
     VTK::IOXML
     Eigen3::Eigen
 )
+
+# 链接 spdlog (如果顶层 CMakeLists.txt 定义了 spdlog 目标)
+if(TARGET spdlog::spdlog)
+    target_link_libraries(Explicit3D PUBLIC spdlog::spdlog)
+    # 添加 spdlog 包含目录 (从项目根目录获取)
+    target_include_directories(Explicit3D PRIVATE "${CMAKE_SOURCE_DIR}/spdlog/include")
+    message(STATUS "已为目标 Explicit3D 链接 spdlog 并添加其包含目录 (继承自顶层)")
+else()
+    # 如果 spdlog 目标不存在, 定义 NO_SPDLOG 宏
+    target_compile_definitions(Explicit3D PRIVATE NO_SPDLOG)
+    message(WARNING "由于未找到 spdlog 目标，Explicit3D 的某些日志功能可能不可用。")
+endif()
 
 if(PROJECT_USE_OPENMP)
     target_link_libraries(Explicit3D PUBLIC OpenMP::OpenMP_CXX)

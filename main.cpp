@@ -1,12 +1,19 @@
 #include "exDyna3D.h"
 #include "logger.h"
-#include <spdlog/spdlog.h>
+#include <iostream>
+#include <chrono>
+#include <fstream>
+#include <string>
+#include <cstdlib>
+#include "spdlog/spdlog.h"
+
 using namespace EnSC;
 //主函数main
 
 int main() {
 	// 初始化日志系统
-	Logger::init("EnSCDynamics");
+	Logger::init();
+
 	spdlog::info("EnSCDynamics 显式动力学求解器启动");
 	
 	exDyna3D exdynarun;
@@ -17,7 +24,7 @@ int main() {
 	fin.open("project.txt");
 	if (!fin.is_open()) {
 		spdlog::error("无法打开配置文件: project.txt");
-		std::cout << "Can not open " << "project.txt" << std::endl;
+		std::cout << "Can not open \"project.txt\"" << std::endl;
 		exit(-1);
 	}
 	
@@ -62,7 +69,7 @@ int main() {
 	
 	// 关闭日志系统
 	Logger::shutdown();
-	
+
 	system("pause");
 	return 0;
 }

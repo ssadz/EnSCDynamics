@@ -5,6 +5,8 @@
 #include <string>
 #include <cctype>
 #include "../include/InpData.h"
+#include "spdlog/spdlog.h"
+
 
 namespace EnSC {
 	/**
@@ -168,7 +170,7 @@ namespace EnSC {
 	bool DataIn::END_PART() {
 		currentPartPtr = nullptr;
 		currentState = ParseState::GLOBAL;
-		std::cout << "结束部件定义: " << currentPartName << std::endl;
+		spdlog::info("结束部件定义: {}", currentPartName); // 替换 std::cout
 		return true;
 	}
 
@@ -180,7 +182,7 @@ namespace EnSC {
 	bool DataIn::END_ASSEMBLY() {
 		currentAssemblyPtr = nullptr;
 		currentState = ParseState::GLOBAL;
-		std::cout << "结束装配定义: " << currentAssemblyName << std::endl;
+		spdlog::info("结束装配定义: {}", currentAssemblyName); // 替换 std::cout
 		return true;
 	}
 
@@ -191,44 +193,44 @@ namespace EnSC {
 	 */
 	bool DataIn::END_STEP() {
 		currentState = ParseState::GLOBAL;
-		std::cout << "结束步骤定义: " << currentStepName << std::endl;
+		spdlog::info("结束步骤定义: {}", currentStepName); // 替换 std::cout
 		
 		// 增加更多调试信息
 		if (!exdyna.steps.empty()) {
 			StepData& currentStep = exdyna.steps.back();
-			std::cout << "------------------步骤调试信息------------------" << std::endl;
-			std::cout << "步骤名称: " << currentStep.name << std::endl;
-			std::cout << "时间周期: " << currentStep.timePeriod << std::endl;
-			std::cout << "本步骤定义的固定约束节点条件数: " << currentStep.boundary.spc_nodes.size() << std::endl;
-			std::cout << "本步骤定义的速度约束节点条件数: " << currentStep.boundary.vel_nodes.size() << std::endl;
+			spdlog::debug("------------------步骤调试信息------------------"); // 替换 std::cout
+			spdlog::debug("步骤名称: {}", currentStep.name); // 替换 std::cout
+			spdlog::debug("时间周期: {}", currentStep.timePeriod); // 替换 std::cout
+			spdlog::debug("本步骤定义的固定约束节点条件数: {}", currentStep.boundary.spc_nodes.size()); // 替换 std::cout
+			spdlog::debug("本步骤定义的速度约束节点条件数: {}", currentStep.boundary.vel_nodes.size()); // 替换 std::cout
 			
 			// 打印重置标记信息
 			if (currentStep.resetSpcBoundary) {
-				std::cout << "本步骤重置了所有位移边界条件 (Boundary, op=NEW)" << std::endl;
+				spdlog::debug("本步骤重置了所有位移边界条件 (Boundary, op=NEW)"); // 替换 std::cout
 			}
 			if (currentStep.resetVelBoundary) {
-				std::cout << "本步骤重置了所有速度边界条件 (Boundary, op=NEW, type=VELOCITY)" << std::endl;
+				spdlog::debug("本步骤重置了所有速度边界条件 (Boundary, op=NEW, type=VELOCITY)"); // 替换 std::cout
 			}
 			if (currentStep.resetDload) {
-				std::cout << "本步骤重置了所有分布载荷 (DLOAD, op=NEW)" << std::endl;
+				spdlog::debug("本步骤重置了所有分布载荷 (DLOAD, op=NEW)"); // 替换 std::cout
 			}
 			if (currentStep.resetDsload) {
-				std::cout << "本步骤重置了所有分布面载荷 (DSLOAD, op=NEW)" << std::endl;
+				spdlog::debug("本步骤重置了所有分布面载荷 (DSLOAD, op=NEW)"); // 替换 std::cout
 			}
 			
 			// 提示关于边界条件继承的情况
 			if (exdyna.steps.size() > 1) {
 				if (!currentStep.resetSpcBoundary && !currentStep.resetVelBoundary &&
 					!currentStep.resetDload && !currentStep.resetDsload) {
-					std::cout << "注意: 在运行时，如果本步骤未定义某类条件，将从前一步骤继承" << std::endl;
+					spdlog::debug("注意: 在运行时，如果本步骤未定义某类条件，将从前一步骤继承"); // 替换 std::cout
 				} else {
-					std::cout << "注意: 本步骤有重置标记，部分条件将不会从前面步骤继承" << std::endl;
+					spdlog::debug("注意: 本步骤有重置标记，部分条件将不会从前面步骤继承"); // 替换 std::cout
 				}
 			}
 			
-			std::cout << "------------------------------------------------" << std::endl;
+			spdlog::debug("------------------------------------------------"); // 替换 std::cout
 		} else {
-			std::cout << "警告: 当前步骤数据未保存!" << std::endl;
+			spdlog::warn("当前步骤数据未保存!"); // 替换 std::cout
 		}
 		
 		return true;
@@ -242,7 +244,7 @@ namespace EnSC {
 	bool DataIn::END_INSTANCE() {
 		currentInstanceName = "";
 		currentInstancePart = "";
-		std::cout << "结束实例定义" << std::endl;
+		spdlog::info("结束实例定义"); // 替换 std::cout
 		return true;
 	}
 
@@ -258,11 +260,11 @@ namespace EnSC {
 		// 打开输入文件
 		fin.open(fileName);
 		if (!fin.is_open()) {
-			std::cout << "无法打开文件！" << std::endl;
+			spdlog::error("无法打开文件！"); // 替换 std::cout
 			exit(0);
 		}
 		else {
-			std::cout << "成功打开文件 " << fileName << "！" << std::endl;
+			spdlog::info("成功打开文件 {}！", fileName); // 替换 std::cout
 		}
 
 		// 初始化解析状态和名称
@@ -282,7 +284,7 @@ namespace EnSC {
 			initialStep.name = "Initial";
 			initialStep.timePeriod = 0.0; // 初始步骤的计算时间为0
 			exdyna.steps.push_back(initialStep);
-			std::cout << "创建初始步骤 'Initial' 用于收集*Step外的条件" << std::endl;
+			spdlog::info("创建初始步骤 'Initial' 用于收集*Step外的条件"); // 替换 std::cout
 		}
 
 		// 逐行读取并处理文件内容
@@ -293,7 +295,7 @@ namespace EnSC {
 					char secondChar = str[1];
 					if (secondChar != '*') {  // 忽略注释行（以 ** 开头）
 						toUpperCase(str);  // 转换为大写，方便匹配
-						std::cout << "处理关键字行: " << str << std::endl;  // 添加调试输出
+						spdlog::debug("处理关键字行: {}", str);  // 添加调试输出, 替换 std::cout
 						
 						// 用于控制循环流程的变量
 						bool continue_main_loop = false;
@@ -312,7 +314,7 @@ namespace EnSC {
 							currentPartPtr = &inp_data.parts.back();
 							currentPartPtr->name = currentPartName;
 							currentState = ParseState::PART_DEFINITION;
-							std::cout << "进入部件定义模式: " << currentPartName << std::endl;
+							spdlog::info("进入部件定义模式: {}", currentPartName); // 替换 std::cout
 							continue;
 						}
 						else if (str.find("*ASSEMBLY") != std::string::npos) {
@@ -324,13 +326,13 @@ namespace EnSC {
 							currentAssemblyPtr = &inp_data.assemblies.back();
 							currentAssemblyPtr->name = currentAssemblyName;
 							currentState = ParseState::ASSEMBLY_DEFINITION;
-							std::cout << "进入装配定义模式: " << currentAssemblyName << std::endl;
+							spdlog::info("进入装配定义模式: {}", currentAssemblyName); // 替换 std::cout
 							continue;
 						}
 						else if (str.find("*MATERIAL") != std::string::npos) {
 							currentMaterialName = extractNameFromKeyword(str);
 							currentState = ParseState::MATERIAL_DEFINITION;
-							std::cout << "进入材料定义模式: " << currentMaterialName << std::endl;
+							spdlog::info("进入材料定义模式: {}", currentMaterialName); // 替换 std::cout
 							continue;
 						}
 						else if (str.find("*STEP") != std::string::npos) {
@@ -348,12 +350,12 @@ namespace EnSC {
 							// 继承逻辑在 setCurrentStep 方法中处理
 							
 							exdyna.steps.push_back(stepData);
-							std::cout << "进入步骤定义模式: " << currentStepName << std::endl;
+							spdlog::info("进入步骤定义模式: {}", currentStepName); // 替换 std::cout
 							continue;
 						}
 						else if (str.find("*INITIAL CONDITIONS") != std::string::npos) {
 							currentState = ParseState::PREDEFINED_FIELD;
-							std::cout << "进入预定义场模式" << std::endl;
+							spdlog::info("进入预定义场模式"); // 替换 std::cout
 						}
 						
 						// 直接检查是否有对应的处理函数，包括结束标记和实例定义
@@ -380,7 +382,7 @@ namespace EnSC {
 									// 处理实体截面定义
 									std::string elset = extractNameFromKeyword(str, "ELSET=");
 									std::string material = extractNameFromKeyword(str, "MATERIAL=");
-									std::cout << "为单元集 " << elset << " 应用材料 " << material << std::endl;
+									spdlog::debug("为单元集 {} 应用材料 {}", elset, material); // 替换 std::cout
 									
 									// 跳过截面定义行
 									if (fin.peek() != '*' && !fin.eof()) {
@@ -398,7 +400,7 @@ namespace EnSC {
 										std::istringstream iss(str);
 										Types::Real density;
 										iss >> density;
-										std::cout << "设置材料 " << currentMaterialName << " 的密度: " << density << std::endl;
+										spdlog::debug("设置材料 {} 的密度: {}", currentMaterialName, density); // 替换 std::cout
 										exdyna.mMatElastic.rho = density;
 									}
 								}
@@ -413,9 +415,7 @@ namespace EnSC {
 										std::getline(iss, token, ',');
 										Types::Real poissonRatio = convertString<Types::Real>(token);
 										
-										std::cout << "设置材料 " << currentMaterialName 
-												  << " 的弹性模量: " << elasticModulus 
-												  << "，泊松比: " << poissonRatio << std::endl;
+										spdlog::debug("设置材料 {} 的弹性模量: {}，泊松比: {}", currentMaterialName, elasticModulus, poissonRatio); // 替换 std::cout
 										
 										exdyna.mMatElastic.E = elasticModulus;
 										exdyna.mMatElastic.v = poissonRatio;
@@ -432,9 +432,9 @@ namespace EnSC {
 							case ParseState::STEP_DEFINITION:
 								// 特殊处理*BOUNDARY命令，以确保连续的边界命令能够被单独处理
 								if (str.find("*BOUNDARY") != std::string::npos) {
-									std::cout << "**特殊处理步骤内边界条件命令: " << str << std::endl;
+									spdlog::debug("**特殊处理步骤内边界条件命令: {}", str); // 替换 std::cout
 									BOUNDARY();  // 直接调用处理函数
-									std::cout << "**步骤内边界条件命令处理完成" << std::endl;
+									spdlog::debug("**步骤内边界条件命令处理完成"); // 替换 std::cout
 									// 继续外部循环，跳过其他处理
 									handled = true;  // 标记为已处理
 									continue_main_loop = true;  // 设置一个标志，指示应该继续主循环
@@ -457,8 +457,7 @@ namespace EnSC {
 											int interval = std::stoi(intervalStr);
 											exdyna.time_interval = exdyna.totalTime / interval;
 											exdyna.time_interval_set = true;
-											std::cout << "从输出设置获取间隔数: " << interval 
-													  << "，设置time_interval=" << exdyna.time_interval << std::endl;
+											spdlog::info("从输出设置获取间隔数: {}, 设置time_interval={}", interval, exdyna.time_interval); // 替换 std::cout
 										}
 									}
 									
@@ -493,7 +492,7 @@ namespace EnSC {
 		}
 
 		fin.close();
-		std::cout << "成功读取文件 " << fileName << "！" << std::endl;
+		spdlog::info("成功读取文件 {}！", fileName); // 替换 std::cout
 		
 		// 新增：调用transferToExDyna()将inp_data转换为exdyna数据
 		transferToExDyna();
@@ -502,21 +501,21 @@ namespace EnSC {
 		exdyna.mMatElastic.update();
 		
 		// 打印解析统计信息
-		std::cout << "解析完成: " << std::endl;
+		spdlog::info("解析完成: "); // 替换 std::cout
 		if (!currentPartName.empty()) {
-			std::cout << "- 部件名称: " << currentPartName << std::endl;
+			spdlog::info("- 部件名称: {}", currentPartName); // 替换 std::cout
 		}
 		if (!currentAssemblyName.empty()) {
-			std::cout << "- 装配名称: " << currentAssemblyName << std::endl;
+			spdlog::info("- 装配名称: {}", currentAssemblyName); // 替换 std::cout
 		}
 		if (!currentStepName.empty()) {
-			std::cout << "- 步骤名称: " << currentStepName << std::endl;
+			spdlog::info("- 步骤名称: {}", currentStepName); // 替换 std::cout
 		}
 		if (!currentMaterialName.empty()) {
-			std::cout << "- 材料名称: " << currentMaterialName << std::endl;
+			spdlog::info("- 材料名称: {}", currentMaterialName); // 替换 std::cout
 		}
-		std::cout << "- 节点数量: " << exdyna.vertices.size() << std::endl;
-		std::cout << "- 单元数量: " << exdyna.hexahedron_elements.size() << std::endl;
+		spdlog::info("- 节点数量: {}", exdyna.vertices.size()); // 替换 std::cout
+		spdlog::info("- 单元数量: {}", exdyna.hexahedron_elements.size()); // 替换 std::cout
 	}
 
 	/**
@@ -672,16 +671,16 @@ namespace EnSC {
 			if (!instance_name.empty()) {
 				// 如果指定了实例，添加到Assembly的节点集中特定实例下
 				currentAssemblyPtr->node_sets[set_name][instance_name] = set_nodes;
-				std::cout << "为实例 " << instance_name << " 添加节点集 " << set_name 
-					      << " (包含 " << set_nodes.size() << " 个节点)" << std::endl;
+				spdlog::debug("为实例 {} 添加节点集 {} (包含 {} 个节点)", 
+						instance_name, set_name, set_nodes.size()); // 替换 std::cout
 			} 
 			else {
 				// 没有指定实例，视为装配级别的全局节点集 (旧行为保持兼容)
 				std::map<std::string, std::vector<std::size_t>> empty_map;
 				empty_map["__GLOBAL__"] = set_nodes; // 使用特殊键表示全局节点
 				currentAssemblyPtr->node_sets[set_name] = empty_map;
-				std::cout << "添加装配级全局节点集 " << set_name 
-					      << " (包含 " << set_nodes.size() << " 个节点)" << std::endl;
+				spdlog::debug("添加装配级全局节点集 {} (包含 {} 个节点)", 
+						set_name, set_nodes.size()); // 替换 std::cout
 			}
 		}
 		return true;
@@ -700,12 +699,12 @@ namespace EnSC {
 					exdyna.steps.back().boundary.vel_nodes.clear();
 					// 设置重置标志，表示本步骤重置了速度边界条件
 					exdyna.steps.back().resetVelBoundary = true;
-					std::cout << "清除步骤 " << exdyna.steps.back().name << " 的所有速度边界条件 (op=NEW)" << std::endl;
+					spdlog::debug("清除步骤 {} 的所有速度边界条件 (op=NEW)", exdyna.steps.back().name); // 替换 std::cout
 				} else {
 					exdyna.steps.back().boundary.spc_nodes.clear();
 					// 设置重置标志，表示本步骤重置了位移边界条件
 					exdyna.steps.back().resetSpcBoundary = true;
-					std::cout << "清除步骤 " << exdyna.steps.back().name << " 的所有位移边界条件 (op=NEW)" << std::endl;
+					spdlog::debug("清除步骤 {} 的所有位移边界条件 (op=NEW)", exdyna.steps.back().name); // 替换 std::cout
 				}
 			} else {
 				// 如果不在步骤定义中，则清除Initial步骤的边界条件（不再使用全局边界条件）
@@ -713,13 +712,13 @@ namespace EnSC {
 					if (!exdyna.steps.empty()) {
 						exdyna.steps.front().boundary.vel_nodes.clear();
 						exdyna.steps.front().resetVelBoundary = true;
-						std::cout << "清除Initial步骤的所有速度边界条件 (op=NEW)" << std::endl;
+						spdlog::debug("清除Initial步骤的所有速度边界条件 (op=NEW)"); // 替换 std::cout
 					}
 				} else {
 					if (!exdyna.steps.empty()) {
 						exdyna.steps.front().boundary.spc_nodes.clear();
 						exdyna.steps.front().resetSpcBoundary = true;
-						std::cout << "清除Initial步骤的所有位移边界条件 (op=NEW)" << std::endl;
+						spdlog::debug("清除Initial步骤的所有位移边界条件 (op=NEW)"); // 替换 std::cout
 					}
 				}
 			}
@@ -742,30 +741,30 @@ namespace EnSC {
 					// 根据是否有velocity类型参数设置对应的重置标志
 					if (str.find("TYPE=VELOCITY") != std::string::npos) {
 						exdyna.steps.back().resetVelBoundary = true;
-						std::cout << "遇到空的速度边界条件命令: " << str << " (仅执行重置操作)" << std::endl;
-						std::cout << "为步骤 " << exdyna.steps.back().name << " 设置速度边界重置标志" << std::endl;
+						spdlog::debug("遇到空的速度边界条件命令: {} (仅执行重置操作)", str); // 替换 std::cout
+						spdlog::debug("为步骤 {} 设置速度边界重置标志", exdyna.steps.back().name); // 替换 std::cout
 					} else {
 						exdyna.steps.back().resetSpcBoundary = true;
-						std::cout << "遇到空的位移边界条件命令: " << str << " (仅执行重置操作)" << std::endl;
-						std::cout << "为步骤 " << exdyna.steps.back().name << " 设置位移边界重置标志" << std::endl;
+						spdlog::debug("遇到空的位移边界条件命令: {} (仅执行重置操作)", str); // 替换 std::cout
+						spdlog::debug("为步骤 {} 设置位移边界重置标志", exdyna.steps.back().name); // 替换 std::cout
 					}
 				} else {
 					// 如果不在特定步骤中，则设置Initial步骤的重置标志
 					if (!exdyna.steps.empty()) {
 						if (str.find("TYPE=VELOCITY") != std::string::npos) {
 							exdyna.steps.front().resetVelBoundary = true;
-							std::cout << "遇到空的速度边界条件命令: " << str << " (为Initial步骤设置重置标志)" << std::endl;
+							spdlog::debug("遇到空的速度边界条件命令: {} (为Initial步骤设置重置标志)", str); // 替换 std::cout
 						} else {
 							exdyna.steps.front().resetSpcBoundary = true;
-							std::cout << "遇到空的位移边界条件命令: " << str << " (为Initial步骤设置重置标志)" << std::endl;
+							spdlog::debug("遇到空的位移边界条件命令: {} (为Initial步骤设置重置标志)", str); // 替换 std::cout
 						}
 					}
 				}
 			} else {
 				if (str.find("TYPE=VELOCITY") != std::string::npos) {
-					std::cout << "遇到空的速度边界条件命令: " << str << " (未执行重置操作)" << std::endl;
+					spdlog::debug("遇到空的速度边界条件命令: {} (未执行重置操作)", str); // 替换 std::cout
 				} else {
-					std::cout << "遇到空的位移边界条件命令: " << str << " (未执行重置操作)" << std::endl;
+					spdlog::debug("遇到空的位移边界条件命令: {} (未执行重置操作)", str); // 替换 std::cout
 				}
 			}
 		}
@@ -821,7 +820,7 @@ namespace EnSC {
 				
 				// 设置重置标志
 				exdyna.steps.back().resetDload = true;
-				std::cout << "清除步骤 " << exdyna.steps.back().name << " 的所有分布载荷 (op=NEW)" << std::endl;
+				spdlog::debug("清除步骤 {} 的所有分布载荷 (op=NEW)", exdyna.steps.back().name); // 替换 std::cout
 			}
 		}
 		
@@ -913,17 +912,17 @@ namespace EnSC {
 		// 如果下一行是另一个关键字（以*开头），表示这是一个纯粹的清除操作
 		// 这种情况下，我们已经在BOUNDARY方法中处理了op=NEW参数，所以可以直接返回
 		if (fin.peek() == '*') {
-			std::cout << "位移边界条件已清除，无新添加的约束" << std::endl;
+			spdlog::debug("位移边界条件已清除，无新添加的约束"); // 替换 std::cout
 			return;
 		}
 
-		std::cout << "开始处理位移边界条件数据..." << std::endl;
+		spdlog::debug("开始处理位移边界条件数据..."); // 替换 std::cout
 		
 		// 读取单点约束数据
 		while (fin.peek() != '*' && !fin.eof()) {
 			std::getline(fin, str);
 			toUpperCase(str);
-            std::cout << "  解析位移边界行: " << str << std::endl;
+            spdlog::debug("  解析位移边界行: {}", str); // 替换 std::cout
 			
 			// 创建临时约束数据 - 修改为使用std::string存储节点集名称
 			std::pair<std::string, std::array<std::size_t, 3>> boundary_data;
@@ -934,42 +933,42 @@ namespace EnSC {
 			if (str.find("SET-") != std::string::npos) {
 				// 使用预定义的节点集合
 				std::getline(iss, token, ',');
-				std::cout << "  使用节点集: " << token << std::endl;
+				spdlog::debug("  使用节点集: {}", token); // 替换 std::cout
 				// 保存集合名称，不再查找集合中的节点
 				boundary_data.first = token;
 			}
 			else {
 				// 单个节点
 				std::getline(iss, token, ',');
-				std::cout << "  使用单个节点: " << token << std::endl;
+				spdlog::debug("  使用单个节点: {}", token); // 替换 std::cout
 				// 使用#前缀表示单个节点
 				boundary_data.first = "#" + token;
 			}
 
 			// 处理特殊约束类型
 			if (str.find("PINNED") != std::string::npos || str.find("ENCASTRE") != std::string::npos) {
-				std::cout << "  使用特殊约束类型: " << (str.find("PINNED") != std::string::npos ? "PINNED" : "ENCASTRE") << std::endl;
+				spdlog::debug("  使用特殊约束类型: {}", (str.find("PINNED") != std::string::npos ? "PINNED" : "ENCASTRE")); // 替换 std::cout
 				boundary_data.second.at(0) = 0;  // 起始自由度
 				boundary_data.second.at(1) = 2;  // 结束自由度
 				boundary_data.second.at(2) = 1;  // 增量
 			}
 			else if (str.find("XSYMM") != std::string::npos) {
 				// X对称：约束X方向位移
-				std::cout << "  使用特殊约束类型: XSYMM (X对称)" << std::endl;
+				spdlog::debug("  使用特殊约束类型: XSYMM (X对称)"); // 替换 std::cout
 				boundary_data.second.at(0) = 0;  // X方向 (第1个自由度)
 				boundary_data.second.at(1) = 0;  // 仅X方向
 				boundary_data.second.at(2) = 1;  // 增量
 			}
 			else if (str.find("YSYMM") != std::string::npos) {
 				// Y对称：约束Y方向位移
-				std::cout << "  使用特殊约束类型: YSYMM (Y对称)" << std::endl;
+				spdlog::debug("  使用特殊约束类型: YSYMM (Y对称)"); // 替换 std::cout
 				boundary_data.second.at(0) = 1;  // Y方向 (第2个自由度)
 				boundary_data.second.at(1) = 1;  // 仅Y方向
 				boundary_data.second.at(2) = 1;  // 增量
 			}
 			else if (str.find("ZSYMM") != std::string::npos) {
 				// Z对称：约束Z方向位移
-				std::cout << "  使用特殊约束类型: ZSYMM (Z对称)" << std::endl;
+				spdlog::debug("  使用特殊约束类型: ZSYMM (Z对称)"); // 替换 std::cout
 				boundary_data.second.at(0) = 2;  // Z方向 (第3个自由度)
 				boundary_data.second.at(1) = 2;  // 仅Z方向
 				boundary_data.second.at(2) = 1;  // 增量
@@ -979,33 +978,33 @@ namespace EnSC {
 				std::getline(iss, token, ',');
 				if (token.empty()) {
 					// 如果没有指定自由度，默认约束所有自由度
-					std::cout << "  未指定自由度，默认约束所有自由度 (1-3)" << std::endl;
+					spdlog::debug("  未指定自由度，默认约束所有自由度 (1-3)"); // 替换 std::cout
 					boundary_data.second.at(0) = 0;
 					boundary_data.second.at(1) = 2;
 					boundary_data.second.at(2) = 1;
 				} else {
-					std::cout << "  自由度起始值: " << token << std::endl;
+					spdlog::debug("  自由度起始值: {}", token); // 替换 std::cout
 					boundary_data.second.at(0) = std::stoi(token) - 1;  // 起始自由度
 					
 					std::getline(iss, token, ',');
 					if (token.empty()) {
 						// 如果没有指定结束自由度，则设置为与起始自由度相同
 						boundary_data.second.at(1) = boundary_data.second.at(0);
-						std::cout << "  自由度结束值: 与起始值相同" << std::endl;
+						spdlog::debug("  自由度结束值: 与起始值相同"); // 替换 std::cout
 					}
 					else {
 						boundary_data.second.at(1) = std::stoi(token) - 1;  // 结束自由度
-						std::cout << "  自由度结束值: " << token << std::endl;
+						spdlog::debug("  自由度结束值: {}", token); // 替换 std::cout
 					}
 					
 					// 读取增量
 					std::getline(iss, token, ',');
 					if (token.empty()) {
 						boundary_data.second.at(2) = 1;  // 默认增量为1
-						std::cout << "  增量: 默认为1" << std::endl;
+						spdlog::debug("  增量: 默认为1"); // 替换 std::cout
 					} else {
 						boundary_data.second.at(2) = std::stoi(token);
-						std::cout << "  增量: " << token << std::endl;
+						spdlog::debug("  增量: {}", token); // 替换 std::cout
 					}
 				}
 			}
@@ -1014,17 +1013,17 @@ namespace EnSC {
 			if (currentState == ParseState::STEP_DEFINITION && !exdyna.steps.empty()) {
 				// 添加到当前解析中的步骤
 				exdyna.steps.back().boundary.spc_nodes.push_back(boundary_data);
-				std::cout << "在步骤 " << exdyna.steps.back().name << " 添加固定约束" << std::endl;
+				spdlog::debug("在步骤 {} 添加固定约束", exdyna.steps.back().name); // 替换 std::cout
 			} else {
 				// 如果不在Step定义中，则添加到Initial步骤，而不是全局约束
 				if (!exdyna.steps.empty()) {
 					exdyna.steps.front().boundary.spc_nodes.push_back(boundary_data);
-					std::cout << "在Initial步骤添加固定约束" << std::endl;
+					 spdlog::debug("在Initial步骤添加固定约束"); // 替换 std::cout
 				}
 			}
 		}
 		
-		std::cout << "位移边界条件处理完成" << std::endl;
+		spdlog::debug("位移边界条件处理完成"); // 替换 std::cout
 	}
 
 	/**
@@ -1063,7 +1062,7 @@ namespace EnSC {
 			if (dot_pos != std::string::npos) {
 				instance_name = node_ref.substr(0, dot_pos);
 				node_ref = node_ref.substr(dot_pos + 1);
-				std::cout << "引用实例 " << instance_name << " 中的";
+				spdlog::debug("引用实例 {} 中的", instance_name); // 替换 std::cout
 			}
 			
 			// 处理节点集合或单个节点
@@ -1077,12 +1076,12 @@ namespace EnSC {
 				
 				// 保存集合名称，而不是查找节点索引
 				exdyna.ini_vel_generation.back().first = set_name;
-				std::cout << "为节点集 " << set_name << " 设置初始速度" << std::endl;
+				spdlog::debug("为节点集 {} 设置初始速度", set_name); // 替换 std::cout
 			}
 			else {
 				// 单个节点，直接保存完整编号作为特殊的"集合名称"
 				exdyna.ini_vel_generation.back().first = "#" + node_ref; // 使用#前缀标记它是单个节点ID
-				std::cout << "为节点 " << node_ref << " 设置初始速度" << std::endl;
+				spdlog::debug("为节点 {} 设置初始速度", node_ref); // 替换 std::cout
 			}
 
 			// 读取自由度索引和速度值
@@ -1098,17 +1097,15 @@ namespace EnSC {
 				// 速度值
 				if (std::getline(iss, token, ',')) {
 					exdyna.ini_vel_generation.back().second.second = convertString<Types::Real>(token);
-					std::cout << "  - 自由度: " << (exdyna.ini_vel_generation.back().second.first + 1) 
-					          << ", 速度: " << exdyna.ini_vel_generation.back().second.second << std::endl;
+					spdlog::debug("  - 自由度: {}, 速度: {}", (exdyna.ini_vel_generation.back().second.first + 1), exdyna.ini_vel_generation.back().second.second); // 替换 std::cout
 				} else {
 					// 如果没有指定速度值，默认为0
 					exdyna.ini_vel_generation.back().second.second = 0.0;
-					std::cout << "  - 自由度: " << (exdyna.ini_vel_generation.back().second.first + 1) 
-					          << ", 速度: 0.0 (默认)" << std::endl;
+					spdlog::debug("  - 自由度: {}, 速度: 0.0 (默认)", (exdyna.ini_vel_generation.back().second.first + 1)); // 替换 std::cout
 				}
 			}
 			catch (const std::exception& e) {
-				std::cerr << "警告: 解析速度数据时出错: " << e.what() << std::endl;
+				spdlog::warn("解析速度数据时出错: {}", e.what()); // 替换 std::cerr
 				exdyna.ini_vel_generation.pop_back();
 			}
 		}
@@ -1127,17 +1124,17 @@ namespace EnSC {
 		// 如果下一行是另一个关键字（以*开头），表示这是一个纯粹的清除操作
 		// 这种情况下，我们已经在BOUNDARY方法中处理了op=NEW参数，所以可以直接返回
 		if (fin.peek() == '*') {
-			std::cout << "速度边界条件已清除，无新添加的约束" << std::endl;
+			spdlog::debug("速度边界条件已清除，无新添加的约束"); // 替换 std::cout
 			return;
 		}
 		
-		std::cout << "开始处理速度边界条件数据..." << std::endl;
+		spdlog::debug("开始处理速度边界条件数据..."); // 替换 std::cout
 		
 		// 读取速度边界条件数据
 		while (fin.peek() != '*' && !fin.eof()) {
 			std::getline(fin, str);
 			toUpperCase(str);
-			std::cout << "  解析速度边界行: " << str << std::endl;
+			spdlog::debug("  解析速度边界行: {}", str); // 替换 std::cout
 			
 			std::istringstream iss(str);
 			std::string token;
@@ -1151,13 +1148,13 @@ namespace EnSC {
 			// 处理节点集合或单个节点
 			if (str.find("SET-") != std::string::npos) {
 				std::getline(iss, token, ',');
-				std::cout << "  使用节点集: " << token << std::endl;
+				spdlog::debug("  使用节点集: {}", token); // 替换 std::cout
 				// 保存集合名称，不再查找集合中的节点
 				boundary_data.first = token;
 			}
 			else {
 				std::getline(iss, token, ',');
-				std::cout << "  使用单个节点: " << token << std::endl;
+				 spdlog::debug("  使用单个节点: {}", token); // 替换 std::cout
 				// 使用#前缀表示单个节点
 				boundary_data.first = "#" + token;
 			}
@@ -1165,46 +1162,46 @@ namespace EnSC {
 			// 读取自由度信息
 			std::getline(iss, token, ',');
 			if (token.empty()) {
-				std::cerr << "  警告: 缺少自由度信息" << std::endl;
+				spdlog::warn("  警告: 缺少自由度信息"); // 替换 std::cerr
 				continue; // 跳过这一行
 			}
 			
-			std::cout << "  自由度起始值: " << token << std::endl;
+			spdlog::debug("  自由度起始值: {}", token); // 替换 std::cout
 			boundary_data.second.first[0] = std::stoi(token) - 1;
 			
 			std::getline(iss, token, ',');
 			if (token.empty()) {
 				boundary_data.second.first[1] = boundary_data.second.first[0];
-				std::cout << "  自由度结束值: 与起始值相同" << std::endl;
+				spdlog::debug("  自由度结束值: 与起始值相同"); // 替换 std::cout
 			}
 			else {
 				boundary_data.second.first[1] = std::stoi(token) - 1;
-				std::cout << "  自由度结束值: " << token << std::endl;
+				spdlog::debug("  自由度结束值: {}", token); // 替换 std::cout
 			}
 
 			// 读取速度值
 			if (std::getline(iss, token, ',')) {
 				boundary_data.second.second = convertString<Types::Real>(token);
-				std::cout << "  速度值: " << boundary_data.second.second << std::endl;
+				 spdlog::debug("  速度值: {}", boundary_data.second.second); // 替换 std::cout
 			} else {
-				std::cout << "  默认速度值: 0.0" << std::endl;
+				spdlog::debug("  默认速度值: 0.0"); // 替换 std::cout
 			}
             
 			// 添加到对应的数据结构中
 			if (currentState == ParseState::STEP_DEFINITION && !exdyna.steps.empty()) {
 				// 添加到当前步骤的约束列表
 				exdyna.steps.back().boundary.vel_nodes.push_back(boundary_data);
-				std::cout << "在步骤 " << exdyna.steps.back().name << " 添加速度约束" << std::endl;
+				spdlog::debug("在步骤 {} 添加速度约束", exdyna.steps.back().name); // 替换 std::cout
 			} else {
 				// 如果不在Step定义中，则添加到Initial步骤，而不是全局约束
 				if (!exdyna.steps.empty()) {
 					exdyna.steps.front().boundary.vel_nodes.push_back(boundary_data);
-					std::cout << "在Initial步骤添加速度约束" << std::endl;
+					spdlog::debug("在Initial步骤添加速度约束"); // 替换 std::cout
 				}
 			}
 		}
 		
-		std::cout << "速度边界条件处理完成" << std::endl;
+		spdlog::debug("速度边界条件处理完成"); // 替换 std::cout
 	}
 
 	//要修改
@@ -1232,11 +1229,11 @@ namespace EnSC {
 			std::get<3>(exdyna.steps.back().gravity) = direction_x;
 			std::get<4>(exdyna.steps.back().gravity) = direction_y;
 			std::get<5>(exdyna.steps.back().gravity) = direction_z;
-			std::cout << "为步骤 " << exdyna.steps.back().name << " 设置重力加速度: " 
-					  << value << " 方向: (" << direction_x << ", " << direction_y << ", " << direction_z << ")" << std::endl;
+			spdlog::debug("为步骤 {} 设置重力加速度: {} 方向: ({}, {}, {})", // 替换 std::cout
+				exdyna.steps.back().name, value, direction_x, direction_y, direction_z);
 		} else {
 			// 否则存储在全局变量中（不应该发生，但作为后备）
-			std::cout << "警告：在步骤外定义重力，这可能导致不一致的行为" << std::endl;
+			spdlog::warn("在步骤外定义重力，这可能导致不一致的行为"); // 替换 std::cout
 		}
 	}
 
@@ -1321,16 +1318,16 @@ namespace EnSC {
 			if (!instance_name.empty()) {
 				// 如果指定了实例，添加到Assembly的单元集中特定实例下
 				currentAssemblyPtr->element_sets[set_name][instance_name] = element_indices;
-				std::cout << "为实例 " << instance_name << " 添加单元集 " << set_name 
-					      << " (包含 " << element_indices.size() << " 个单元)" << std::endl;
+				spdlog::debug("为实例 {} 添加单元集 {} (包含 {} 个单元)", 
+						instance_name, set_name, element_indices.size()); // 替换 std::cout
 			} 
 			else {
 				// 没有指定实例，视为装配级别的全局单元集 (旧行为保持兼容)
 				std::map<std::string, std::vector<std::size_t>> empty_map;
 				empty_map["__GLOBAL__"] = element_indices; // 使用特殊键表示全局单元
 				currentAssemblyPtr->element_sets[set_name] = empty_map;
-				std::cout << "添加装配级全局单元集 " << set_name 
-					      << " (包含 " << element_indices.size() << " 个单元)" << std::endl;
+				spdlog::debug("添加装配级全局单元集 {} (包含 {} 个单元)", 
+						set_name, element_indices.size()); // 替换 std::cout
 			}
 		}
 		return true;
@@ -1353,7 +1350,7 @@ namespace EnSC {
 		std::string surf_type_global = extractNameFromKeyword(str, "TYPE=");
 		
 		if (surf_name.empty()) {
-			std::cerr << "警告: 无法解析表面名称" << std::endl;
+			spdlog::warn("无法解析表面名称"); // 替换 std::cerr
 			// 跳过这个表面定义的数据
 			while (fin.peek() != '*' && fin.peek() != EOF) {
 				std::getline(fin, str);
@@ -1368,9 +1365,9 @@ namespace EnSC {
 		std::string full_surf_name = surf_name;
 		if (!instance_name.empty()) {
 			full_surf_name = instance_name + "." + surf_name;
-			std::cout << "在实例 " << instance_name << " 中定义表面: " << surf_name << std::endl;
+			spdlog::debug("在实例 {} 中定义表面: {}", instance_name, surf_name); // 替换 std::cout
 		} else {
-			std::cout << "定义表面: " << surf_name << std::endl;
+			spdlog::debug("定义表面: {}", surf_name); // 替换 std::cout
 		}
 		
 		// 逐行读取表面定义
@@ -1417,7 +1414,7 @@ namespace EnSC {
 			std::pair<std::string, std::string> surf_definition(full_ele_set_name, surf_face_type);
 			exdyna.map_set_surface_list[full_surf_name] = surf_definition;
 			
-			std::cout << "  - 表面组成: 单元集=" << full_ele_set_name << ", 面类型=" << surf_face_type << std::endl;
+			spdlog::debug("  - 表面组成: 单元集={}, 面类型={}", full_ele_set_name, surf_face_type); // 替换 std::cout
 		}
 		
 		return true;
@@ -1443,7 +1440,7 @@ namespace EnSC {
 				
 				// 设置重置标志
 				exdyna.steps.back().resetDsload = true;
-				std::cout << "清除步骤 " << exdyna.steps.back().name << " 的所有分布面载荷 (op=NEW)" << std::endl;
+				spdlog::debug("清除步骤 {} 的所有分布面载荷 (op=NEW)", exdyna.steps.back().name); // 替换 std::cout
 			}
 		}
 
@@ -1478,13 +1475,11 @@ namespace EnSC {
 			if (currentState == ParseState::STEP_DEFINITION && !exdyna.steps.empty()) {
 				// 存储在当前步骤的dsload中
 				exdyna.steps.back().dsload.push_back(dsload_entry);
-				std::cout << "为步骤 " << exdyna.steps.back().name 
-						  << " 添加分布面载荷: 表面=" << surf_name 
-						  << " 类型=" << load_type 
-						  << " 值=" << load_value << std::endl;
+				spdlog::debug("为步骤 {} 添加分布面载荷: 表面={} 类型={} 值={}", // 替换 std::cout
+					exdyna.steps.back().name, surf_name, load_type, load_value);
 			} else {
 				// 否则存储在全局变量中（不应该发生，但作为后备）
-				std::cout << "警告：在步骤外定义分布面载荷，这可能导致不一致的行为" << std::endl;
+				spdlog::warn("在步骤外定义分布面载荷，这可能导致不一致的行为"); // 替换 std::cout
 			}
 		}
 		return true;
@@ -1506,7 +1501,7 @@ namespace EnSC {
 			if (!token.empty()) {
 				// 将读取的值设置为exdyna的time_interval
 				exdyna.time_interval = convertString<Types::Real>(token);
-				std::cout << "从inp文件中读取到输出间隔: " << exdyna.time_interval << std::endl;
+				spdlog::info("从inp文件中读取到输出间隔: {}", exdyna.time_interval); // 替换 std::cout
 				
 				// 标记time_interval已被设置
 				exdyna.time_interval_set = true;
@@ -1544,11 +1539,10 @@ namespace EnSC {
 				if (number_interval > 0) {
 					exdyna.time_interval = exdyna.totalTime / number_interval;
 					exdyna.time_interval_set = true;
-					std::cout << "从inp文件的*Output设置中读取到number interval=" << number_interval 
-					          << "，设置time_interval=" << exdyna.time_interval << std::endl;
+					spdlog::info("从inp文件的*Output设置中读取到number interval={}, 设置time_interval={}", number_interval, exdyna.time_interval); // 替换 std::cout
 				}
 			} catch (const std::exception& e) {
-				std::cerr << "解析OUTPUT的number interval参数时出错: " << e.what() << std::endl;
+				spdlog::error("解析OUTPUT的number interval参数时出错: {}", e.what()); // 替换 std::cerr
 			}
 		}
 		
@@ -1562,25 +1556,23 @@ namespace EnSC {
 
 	// 新增：transferToExDyna方法的实现
 	void DataIn::transferToExDyna() {
-		std::cout << "\n=== 开始转换数据到exDyna3D结构 ===" << std::endl;
+		spdlog::info("=== 开始转换数据到exDyna3D结构 ==="); // 替换 std::cout
 		
 		// 统计数量
 		size_t totalNodes = 0;
 		size_t totalElements = 0;
 		
 		// 1. 统计所有Part的节点和单元数量
-		std::cout << "处理的部件数量: " << inp_data.parts.size() << std::endl;
+		spdlog::debug("处理的部件数量: {}", inp_data.parts.size()); // 替换 std::cout
 		for (const auto& part : inp_data.parts) {
 			totalNodes += part.nodes.size();
 			totalElements += part.elements.size();
-			std::cout << "- 部件 '" << part.name << "': " 
-					  << part.nodes.size() << " 个节点, " 
-					  << part.elements.size() << " 个单元" << std::endl;
+			 spdlog::debug("- 部件 '{}': {} 个节点, {} 个单元", part.name, part.nodes.size(), part.elements.size()); // 替换 std::cout
 		}
 		
 		// 如果没有Part数据（即inp_data未被填充），则直接返回，不进行转换
 		if (inp_data.parts.empty()) {
-			std::cout << "警告：没有找到有效的Part数据，跳过转换。" << std::endl;
+			spdlog::warn("没有找到有效的Part数据，跳过转换。"); // 替换 std::cout
 			return;
 		}
 		
@@ -1639,14 +1631,14 @@ namespace EnSC {
 		
 		// 4. 处理装配中的实例，更新实例的索引信息
 		if (!inp_data.assemblies.empty()) {
-			std::cout << "处理的装配数量: " << inp_data.assemblies.size() << std::endl;
+			spdlog::debug("处理的装配数量: {}", inp_data.assemblies.size()); // 替换 std::cout
 			
 			for (auto& assembly : inp_data.assemblies) {
-				std::cout << "- 处理装配 '" << assembly.name << "' 及其实例" << std::endl;
+				spdlog::debug("- 处理装配 '{}' 及其实例", assembly.name); // 替换 std::cout
 				
 				// 处理实例
 				for (auto& instance : assembly.instances) {
-					std::cout << "  - 实例 '" << instance.name << "' 引用部件 '" << instance.part_name << "'" << std::endl;
+					spdlog::debug("  - 实例 '{}' 引用部件 '{}'", instance.name, instance.part_name); // 替换 std::cout
 					
 					// 找到对应的部件
 					auto partIt = std::find_if(inp_data.parts.begin(), inp_data.parts.end(), 
@@ -1657,13 +1649,12 @@ namespace EnSC {
 						instance.node_start_index = partNodeOffset[instance.part_name];
 						instance.element_start_index = partElementOffset[instance.part_name];
 						
-						std::cout << "    节点起始索引: " << instance.node_start_index 
-						          << ", 单元起始索引: " << instance.element_start_index << std::endl;
+						spdlog::debug("    节点起始索引: {}, 单元起始索引: {}", instance.node_start_index, instance.element_start_index); // 替换 std::cout
 						
 						// 处理坐标变换（平移）
 						// 注意：这里简化处理，假设不需要坐标变换，在实际应用中可以添加
 					} else {
-						std::cerr << "  警告: 找不到部件 '" << instance.part_name << "'" << std::endl;
+						spdlog::warn("  警告: 找不到部件 '{}'", instance.part_name); // 替换 std::cerr
 					}
 				}
 				
@@ -1699,7 +1690,7 @@ namespace EnSC {
 					
 					// 添加到exdyna的节点集映射
 					exdyna.map_set_node_list[setName] = globalNodeSet;
-					std::cout << "  添加装配级节点集: " << setName << " 包含 " << globalNodeSet.size() << " 个节点" << std::endl;
+					spdlog::debug("  添加装配级节点集: {} 包含 {} 个节点", setName, globalNodeSet.size()); // 替换 std::cout
 				}
 				
 				// 5.2 处理单元集
@@ -1733,14 +1724,14 @@ namespace EnSC {
 					
 					// 添加到exdyna的单元集映射
 					exdyna.map_set_ele_list[setName] = globalElemSet;
-					std::cout << "  添加装配级单元集: " << setName << " 包含 " << globalElemSet.size() << " 个单元" << std::endl;
+					spdlog::debug("  添加装配级单元集: {} 包含 {} 个单元", setName, globalElemSet.size()); // 替换 std::cout
 				}
 			}
 		}
 		
 		// 6. 处理材料属性
 		if (!inp_data.materials.empty()) {
-			std::cout << "处理材料数据: " << inp_data.materials.size() << " 个材料" << std::endl;
+			spdlog::debug("处理材料数据: {} 个材料", inp_data.materials.size()); // 替换 std::cout
 			
 			// 这里只取第一个材料（假设单一材料）
 			if (!inp_data.materials.empty()) {
@@ -1748,17 +1739,12 @@ namespace EnSC {
 				exdyna.mMatElastic.rho = material.density;
 				exdyna.mMatElastic.E = material.E;
 				exdyna.mMatElastic.v = material.v;
-				std::cout << "设置材料属性: 密度=" << material.density 
-						  << " E=" << material.E 
-						  << " v=" << material.v << std::endl;
+				spdlog::debug("设置材料属性: 密度={} E={} v={}", material.density, material.E, material.v); // 替换 std::cout
 			}
 		}
 		
-		std::cout << "数据转换完成: " 
-				  << exdyna.vertices.size() << " 个节点, " 
-				  << exdyna.hexahedron_elements.size() << " 个单元" 
-				  << std::endl;
-		std::cout << "=== 转换完成 ===\n" << std::endl;
+		spdlog::info("数据转换完成: {} 个节点, {} 个单元", exdyna.vertices.size(), exdyna.hexahedron_elements.size()); // 替换 std::cout
+		spdlog::info("=== 转换完成 ===\n"); // 替换 std::cout
 	}
 }
 
