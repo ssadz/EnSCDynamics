@@ -81,6 +81,43 @@ endif()
 list(APPEND CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/eigen")
 message(STATUS "已添加 Eigen 路径到搜索路径: ${CMAKE_SOURCE_DIR}/eigen")
 
+# --- spdlog 配置 ---
+# 检查spdlog库的包含和库文件路径
+set(SPDLOG_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/spdlog/include")
+set(SPDLOG_LIB_DIR "${CMAKE_SOURCE_DIR}/spdlog/lib")
+set(SPDLOG_LIB_FILE "${SPDLOG_LIB_DIR}/spdlog.lib")
+
+if(EXISTS "${SPDLOG_INCLUDE_DIR}" AND EXISTS "${SPDLOG_LIB_FILE}")
+    message(STATUS "找到 spdlog 库文件: ${SPDLOG_LIB_FILE}")
+    message(STATUS "找到 spdlog 头文件目录: ${SPDLOG_INCLUDE_DIR}")
+    
+    # 创建spdlog库目标
+    add_library(spdlog STATIC IMPORTED)
+    set_target_properties(spdlog PROPERTIES
+        IMPORTED_LOCATION "${SPDLOG_LIB_FILE}"
+        INTERFACE_INCLUDE_DIRECTORIES "${SPDLOG_INCLUDE_DIR}"
+    )
+    
+    # 根据构建类型定义不同的日志行为
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+        # Debug和RelWithDebInfo模式下输出日志
+        message(STATUS "当前构建类型(${CMAKE_BUILD_TYPE})下将启用文件日志")
+        add_compile_definitions(ENABLE_FILE_LOGGING)
+    elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
+        # Release模式下可以选择禁用日志或仅输出错误日志
+        message(STATUS "Release模式下将仅启用错误日志")
+        add_compile_definitions(ENABLE_ERROR_LOGGING_ONLY)
+    endif()
+else()
+    if(NOT EXISTS "${SPDLOG_INCLUDE_DIR}")
+        message(WARNING "未找到 spdlog 头文件目录 (${SPDLOG_INCLUDE_DIR})。")
+    endif()
+    if(NOT EXISTS "${SPDLOG_LIB_FILE}")
+        message(WARNING "未找到 spdlog 库文件 (${SPDLOG_LIB_FILE})。")
+    endif()
+    message(WARNING "spdlog库设置失败，日志功能将不可用。")
+endif()
+
 message(STATUS "最终的库搜索路径 (CMAKE_PREFIX_PATH): ${CMAKE_PREFIX_PATH}")
 
 # 添加 Explicit3D 子目录
@@ -97,6 +134,11 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 target_link_libraries(${PROJECT_NAME} PRIVATE
     Explicit3D
 )
+
+# 链接 spdlog
+if(TARGET spdlog)
+    target_link_libraries(${PROJECT_NAME} PRIVATE spdlog)
+endif()
 
 # --- 构建后操作 (仅 Windows: 复制 VTK DLLs) ---
 if(WIN32 AND LOCAL_VTK_BIN_DIR)

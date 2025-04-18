@@ -15,3 +15,5 @@ eigen/
 vcpkg/
 
 VTK_win64/
+
+spdlog/
