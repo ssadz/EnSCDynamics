@@ -685,91 +685,51 @@ namespace EnSC {
 	}
 
 	bool DataIn::BOUNDARY() {
-		// 检查是否包含 op=NEW 参数，如果是，则清除当前步骤的相应边界条件
-		bool op_new = false;
-		if (str.find("OP=NEW") != std::string::npos) {
-			op_new = true;
-			
-			// 如果在步骤定义中且有步骤数据，则清除当前步骤的相应边界条件并设置重置标志
+		// 检查是否包含 op=NEW 参数
+		bool op_new = (str.find("OP=NEW") != std::string::npos);
+		bool is_velocity = (str.find("TYPE=VELOCITY") != std::string::npos);
+		
+		// 如果有op=NEW，设置对应类型的重置标志（不清除边界条件）
+		if (op_new) {
 			if (currentState == ParseState::STEP_DEFINITION && !exdyna.steps.empty()) {
-				// 根据边界条件类型（位移或速度）决定清除哪种边界条件
-				if (str.find("TYPE=VELOCITY") != std::string::npos) {
-					exdyna.steps.back().boundary.vel_nodes.clear();
-					// 设置重置标志，表示本步骤重置了速度边界条件
+				if (is_velocity) {
 					exdyna.steps.back().resetVelBoundary = true;
-					spdlog::debug("清除步骤 {} 的所有速度边界条件 (op=NEW)", exdyna.steps.back().name); // 替换 std::cout
+					spdlog::debug("步骤 {} 设置速度边界重置标志 (op=NEW)", exdyna.steps.back().name);
 				} else {
-					exdyna.steps.back().boundary.spc_nodes.clear();
-					// 设置重置标志，表示本步骤重置了位移边界条件
 					exdyna.steps.back().resetSpcBoundary = true;
-					spdlog::debug("清除步骤 {} 的所有位移边界条件 (op=NEW)", exdyna.steps.back().name); // 替换 std::cout
+					spdlog::debug("步骤 {} 设置位移边界重置标志 (op=NEW)", exdyna.steps.back().name);
 				}
 			} else {
-				// 如果不在步骤定义中，则清除Initial步骤的边界条件（不再使用全局边界条件）
-				if (str.find("TYPE=VELOCITY") != std::string::npos) {
-					if (!exdyna.steps.empty()) {
-						exdyna.steps.front().boundary.vel_nodes.clear();
+				if (!exdyna.steps.empty()) {
+					if (is_velocity) {
 						exdyna.steps.front().resetVelBoundary = true;
-						spdlog::debug("清除Initial步骤的所有速度边界条件 (op=NEW)"); // 替换 std::cout
-					}
-				} else {
-					if (!exdyna.steps.empty()) {
-						exdyna.steps.front().boundary.spc_nodes.clear();
-						exdyna.steps.front().resetSpcBoundary = true;
-						spdlog::debug("清除Initial步骤的所有位移边界条件 (op=NEW)"); // 替换 std::cout
-					}
-				}
-			}
-		}
-
-		// 处理不同类型的边界条件
-		// 注意：当未指定type参数时（即 *Boundary 或 *Boundary, op=NEW 命令没有type参数），
-		// 默认按SPC（位移）边界条件处理，调用SPC_NODE()方法
-		
-		// 检查当前命令行是否为单独的边界条件命令而没有后续数据
-		// 这种情况在有连续的*Boundary命令时可能发生
-		bool isEmptyBoundaryCommand = false;
-		if (fin.peek() == '*') {
-			// 下一行又是一个新的关键字，表示当前的*Boundary命令没有数据行
-			isEmptyBoundaryCommand = true;
-			
-			// 即使是空命令，也需要记录已经处理过对应类型的重置操作
-			if (op_new) {
-				if (currentState == ParseState::STEP_DEFINITION && !exdyna.steps.empty()) {
-					// 根据是否有velocity类型参数设置对应的重置标志
-					if (str.find("TYPE=VELOCITY") != std::string::npos) {
-						exdyna.steps.back().resetVelBoundary = true;
-						spdlog::debug("遇到空的速度边界条件命令: {} (仅执行重置操作)", str); // 替换 std::cout
-						spdlog::debug("为步骤 {} 设置速度边界重置标志", exdyna.steps.back().name); // 替换 std::cout
+						spdlog::debug("Initial步骤设置速度边界重置标志 (op=NEW)");
 					} else {
-						exdyna.steps.back().resetSpcBoundary = true;
-						spdlog::debug("遇到空的位移边界条件命令: {} (仅执行重置操作)", str); // 替换 std::cout
-						spdlog::debug("为步骤 {} 设置位移边界重置标志", exdyna.steps.back().name); // 替换 std::cout
+						exdyna.steps.front().resetSpcBoundary = true;
+						spdlog::debug("Initial步骤设置位移边界重置标志 (op=NEW)");
 					}
-				} else {
-					// 如果不在特定步骤中，则设置Initial步骤的重置标志
-					if (!exdyna.steps.empty()) {
-						if (str.find("TYPE=VELOCITY") != std::string::npos) {
-							exdyna.steps.front().resetVelBoundary = true;
-							spdlog::debug("遇到空的速度边界条件命令: {} (为Initial步骤设置重置标志)", str); // 替换 std::cout
-						} else {
-							exdyna.steps.front().resetSpcBoundary = true;
-							spdlog::debug("遇到空的位移边界条件命令: {} (为Initial步骤设置重置标志)", str); // 替换 std::cout
-						}
-					}
-				}
-			} else {
-				if (str.find("TYPE=VELOCITY") != std::string::npos) {
-					spdlog::debug("遇到空的速度边界条件命令: {} (未执行重置操作)", str); // 替换 std::cout
-				} else {
-					spdlog::debug("遇到空的位移边界条件命令: {} (未执行重置操作)", str); // 替换 std::cout
 				}
 			}
 		}
 		
-		// 只有当不是空的边界条件命令时，才调用相应的处理函数
+		// 检查下一行是否为另一个关键字
+		std::streampos currentPos = fin.tellg(); // 保存当前位置
+		std::string nextLine;
+		std::getline(fin, nextLine);
+		bool isEmptyBoundaryCommand = false;
+		
+		// 检查下一行是否为关键字或者结束
+		if (nextLine.empty() || nextLine[0] == '*') {
+			isEmptyBoundaryCommand = true;
+			spdlog::debug("检测到空的边界条件命令: {}", str);
+		}
+		
+		// 返回到当前命令行结束位置
+		fin.seekg(currentPos);
+		
+		// 如果不是空命令，则读取并处理边界条件数据
 		if (!isEmptyBoundaryCommand) {
-			if (str.find("TYPE=VELOCITY") != std::string::npos) {
+			if (is_velocity) {
 				VELOCITY_NODE();
 			} else {
 				SPC_NODE();
@@ -805,20 +765,16 @@ namespace EnSC {
 	 * @return 处理成功返回true
 	 */
 	bool DataIn::DLOAD() {
-		// 检查是否包含 op=NEW 参数，如果是，则清除当前步骤的相应载荷
-		bool op_new = false;
-		if (str.find("OP=NEW") != std::string::npos) {
-			op_new = true;
-			
-			// 如果在步骤定义中且有步骤数据，则清除当前步骤的分布载荷并设置重置标志
+		// 检查是否包含 op=NEW 参数
+		bool op_new = (str.find("OP=NEW") != std::string::npos);
+		
+		// 如果有op=NEW，设置对应类型的重置标志（不清除载荷数据）
+		if (op_new) {
+			// 如果在步骤定义中且有步骤数据，则设置重置标志
 			if (currentState == ParseState::STEP_DEFINITION && !exdyna.steps.empty()) {
-				// 清除分布载荷
-				std::get<0>(exdyna.steps.back().gravity) = false;
-				exdyna.steps.back().dsload.clear();
-				
-				// 设置重置标志
+				// 只设置重置标志，不清除数据
 				exdyna.steps.back().resetDload = true;
-				spdlog::debug("清除步骤 {} 的所有分布载荷 (op=NEW)", exdyna.steps.back().name); // 替换 std::cout
+				spdlog::debug("步骤 {} 设置分布载荷重置标志 (op=NEW)", exdyna.steps.back().name);
 			}
 		}
 		
@@ -1426,19 +1382,16 @@ namespace EnSC {
 	 * @return 处理成功返回true
 	 */
 	bool DataIn::DSLOAD() {
-		// 检查是否包含 op=NEW 参数，如果是，则清除当前步骤的相应载荷
-		bool op_new = false;
-		if (str.find("OP=NEW") != std::string::npos) {
-			op_new = true;
-			
-			// 如果在步骤定义中且有步骤数据，则清除当前步骤的分布面载荷并设置重置标志
+		// 检查是否包含 op=NEW 参数
+		bool op_new = (str.find("OP=NEW") != std::string::npos);
+		
+		// 如果有op=NEW，设置对应类型的重置标志（不清除载荷数据）
+		if (op_new) {
+			// 如果在步骤定义中且有步骤数据，则设置重置标志
 			if (currentState == ParseState::STEP_DEFINITION && !exdyna.steps.empty()) {
-				// 清除分布面载荷
-				exdyna.steps.back().dsload.clear();
-				
-				// 设置重置标志
+				// 只设置重置标志，不清除数据
 				exdyna.steps.back().resetDsload = true;
-				spdlog::debug("清除步骤 {} 的所有分布面载荷 (op=NEW)", exdyna.steps.back().name); // 替换 std::cout
+				spdlog::debug("步骤 {} 设置分布面载荷重置标志 (op=NEW)", exdyna.steps.back().name);
 			}
 		}
 
@@ -1473,11 +1426,11 @@ namespace EnSC {
 			if (currentState == ParseState::STEP_DEFINITION && !exdyna.steps.empty()) {
 				// 存储在当前步骤的dsload中
 				exdyna.steps.back().dsload.push_back(dsload_entry);
-				spdlog::debug("为步骤 {} 添加分布面载荷: 表面={} 类型={} 值={}", // 替换 std::cout
+				spdlog::debug("为步骤 {} 添加分布面载荷: 表面={} 类型={} 值={}", 
 					exdyna.steps.back().name, surf_name, load_type, load_value);
 			} else {
 				// 否则存储在全局变量中（不应该发生，但作为后备）
-				spdlog::warn("在步骤外定义分布面载荷，这可能导致不一致的行为"); // 替换 std::cout
+				spdlog::warn("在步骤外定义分布面载荷，这可能导致不一致的行为"); 
 			}
 		}
 		return true;
