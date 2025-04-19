@@ -155,10 +155,51 @@ namespace EnSC {
 		inst.node_start_index = 0;          // 将在transferToExDyna中设置
 		inst.element_start_index = 0;       // 将在transferToExDyna中设置
 		
-		// 处理可能的平移信息（这里简化处理，实际中可能需要解析更多参数）
-		// TODO: 实现解析ABAQUS INP文件中的平移和旋转变换
+		// 检查下一行是否包含平移信息
+		std::streampos currentPos = fin.tellg(); // 保存当前位置
+		if (fin.peek() != '*' && !fin.eof()) {
+			std::string nextLine;
+			std::getline(fin, nextLine);
+			
+			// 检查下一行是否包含可能的平移量数据（三个浮点数）
+			std::istringstream iss(nextLine);
+			Types::Real x, y, z;
+			bool isTranslation = false;
+			
+			// 尝试解析三个浮点数
+			char peek_char = iss.peek();
+			while (std::isspace(peek_char) && peek_char != EOF) {
+				iss.ignore(1);
+				peek_char = iss.peek();
+			}
+			
+			if (iss >> x) {
+				// 检查第一个数字后是否有逗号，如果有则移除
+				if (iss.peek() == ',') iss.ignore(1);
+				if (iss >> y) {
+					// 检查第二个数字后是否有逗号，如果有则移除
+					if (iss.peek() == ',') iss.ignore(1);
+					if (iss >> z) {
+						isTranslation = true;
+					}
+				}
+			}
+			
+			if (isTranslation) {
+				// 设置平移量
+				inst.translation[0] = x;
+				inst.translation[1] = y;
+				inst.translation[2] = z;
+				spdlog::debug("  实例 {} 的平移量: ({}, {}, {})", instance_name, x, y, z);
+			} else {
+				// 不是平移量数据，回到之前的位置
+				fin.seekg(currentPos);
+			}
+		}
 		
 		currentAssemblyPtr->instances.push_back(inst);
+		currentInstanceName = instance_name;
+		currentInstancePart = part_name;
 		return true;
 	}
 
@@ -1533,59 +1574,15 @@ namespace EnSC {
 		exdyna.vertices.reserve(totalNodes);
 		exdyna.hexahedron_elements.reserve(totalElements);
 		
-		// 3. 首先处理所有Part的数据
-		std::map<std::string, size_t> partNodeOffset; // 记录每个Part节点的全局偏移量
-		std::map<std::string, size_t> partElementOffset; // 记录每个Part单元的全局偏移量
-		size_t globalNodeIndex = 0;
-		size_t globalElementIndex = 0;
-		
-		// 3.1 添加节点到exdyna
-		for (const auto& part : inp_data.parts) {
-			// 记录当前Part的节点偏移量
-			partNodeOffset[part.name] = globalNodeIndex;
-			
-			// 添加节点到exdyna
-			for (const auto& node : part.nodes) {
-				exdyna.vertices.push_back(node);
-				globalNodeIndex++;
-			}
-		}
-		
-		// 3.2 添加单元到exdyna
-		for (const auto& part : inp_data.parts) {
-			// 记录当前Part的单元偏移量
-			partElementOffset[part.name] = globalElementIndex;
-			size_t partOffset = partNodeOffset[part.name];
-			
-			// 添加单元到exdyna
-			for (const auto& element : part.elements) {
-				exdyna.hexahedron_elements.emplace_back();
-				auto& newElement = exdyna.hexahedron_elements.back();
-				
-				// 设置单元的物理ID和材料ID（默认为1）
-				newElement.set_PID(1);
-				newElement.set_MID(1);
-				
-				// 复制单元的节点索引，并调整为全局索引
-				std::vector<Types::Vertex_index> globalNodes;
-				globalNodes.reserve(element.size());
-				
-				for (const auto& localIdx : element) {
-					globalNodes.push_back(localIdx + partOffset);
-				}
-				
-				// 设置调整后的节点索引
-				newElement.set_verticesIndex(globalNodes);
-				globalElementIndex++;
-			}
-		}
-		
-		// 4. 处理装配中的实例，更新实例的索引信息
+		// 3. 处理装配中的实例
 		if (!inp_data.assemblies.empty()) {
 			spdlog::debug("处理的装配数量: {}", inp_data.assemblies.size()); // 替换 std::cout
 			
 			for (auto& assembly : inp_data.assemblies) {
 				spdlog::debug("- 处理装配 '{}' 及其实例", assembly.name); // 替换 std::cout
+				
+				size_t globalNodeIndex = 0;
+				size_t globalElementIndex = 0;
 				
 				// 处理实例
 				for (auto& instance : assembly.instances) {
@@ -1596,14 +1593,56 @@ namespace EnSC {
 						[&](const InpPart& p) { return p.name == instance.part_name; });
 					
 					if (partIt != inp_data.parts.end()) {
-						// 设置实例的节点和单元起始索引
-						instance.node_start_index = partNodeOffset[instance.part_name];
-						instance.element_start_index = partElementOffset[instance.part_name];
+						// 记录当前实例节点的起始索引
+						instance.node_start_index = globalNodeIndex;
+						instance.element_start_index = globalElementIndex;
 						
 						spdlog::debug("    节点起始索引: {}, 单元起始索引: {}", instance.node_start_index, instance.element_start_index); // 替换 std::cout
 						
-						// 处理坐标变换（平移）
-						// 注意：这里简化处理，假设不需要坐标变换，在实际应用中可以添加
+						// 检查是否需要应用平移变换
+						bool hasTranslation = false;
+						if (instance.translation[0] != 0.0 || instance.translation[1] != 0.0 || instance.translation[2] != 0.0) {
+							hasTranslation = true;
+							spdlog::debug("    应用平移变换: ({}, {}, {})", 
+								instance.translation[0], instance.translation[1], instance.translation[2]);
+						}
+						
+						// 添加节点到exdyna，应用平移变换
+						for (const auto& node : partIt->nodes) {
+							Types::Point<3> transformedNode = node;
+							
+							// 应用平移变换
+							if (hasTranslation) {
+								transformedNode[0] += instance.translation[0];
+								transformedNode[1] += instance.translation[1];
+								transformedNode[2] += instance.translation[2];
+							}
+							
+							exdyna.vertices.push_back(transformedNode);
+							globalNodeIndex++;
+						}
+						
+						// 添加单元到exdyna
+						for (const auto& element : partIt->elements) {
+							exdyna.hexahedron_elements.emplace_back();
+							auto& newElement = exdyna.hexahedron_elements.back();
+							
+							// 设置单元的物理ID和材料ID（默认为1）
+							newElement.set_PID(1);
+							newElement.set_MID(1);
+							
+							// 复制单元的节点索引，并调整为全局索引
+							std::vector<Types::Vertex_index> globalNodes;
+							globalNodes.reserve(element.size());
+							
+							for (const auto& localIdx : element) {
+								globalNodes.push_back(localIdx + instance.node_start_index);
+							}
+							
+							// 设置调整后的节点索引
+							newElement.set_verticesIndex(globalNodes);
+							globalElementIndex++;
+						}
 					} else {
 						spdlog::warn("  警告: 找不到部件 '{}'", instance.part_name); // 替换 std::cerr
 					}
@@ -1676,6 +1715,56 @@ namespace EnSC {
 					// 添加到exdyna的单元集映射
 					exdyna.map_set_ele_list[setName] = globalElemSet;
 					spdlog::debug("  添加装配级单元集: {} 包含 {} 个单元", setName, globalElemSet.size()); // 替换 std::cout
+				}
+			}
+		} else {
+			// 如果没有装配数据，则直接添加所有Part
+			spdlog::debug("未找到装配数据，将直接转换所有部件"); // 替换 std::cout
+			
+			// 3. 首先处理所有Part的数据
+			std::map<std::string, size_t> partNodeOffset; // 记录每个Part节点的全局偏移量
+			std::map<std::string, size_t> partElementOffset; // 记录每个Part单元的全局偏移量
+			size_t globalNodeIndex = 0;
+			size_t globalElementIndex = 0;
+			
+			// 3.1 添加节点到exdyna
+			for (const auto& part : inp_data.parts) {
+				// 记录当前Part的节点偏移量
+				partNodeOffset[part.name] = globalNodeIndex;
+				
+				// 添加节点到exdyna
+				for (const auto& node : part.nodes) {
+					exdyna.vertices.push_back(node);
+					globalNodeIndex++;
+				}
+			}
+			
+			// 3.2 添加单元到exdyna
+			for (const auto& part : inp_data.parts) {
+				// 记录当前Part的单元偏移量
+				partElementOffset[part.name] = globalElementIndex;
+				size_t partOffset = partNodeOffset[part.name];
+				
+				// 添加单元到exdyna
+				for (const auto& element : part.elements) {
+					exdyna.hexahedron_elements.emplace_back();
+					auto& newElement = exdyna.hexahedron_elements.back();
+					
+					// 设置单元的物理ID和材料ID（默认为1）
+					newElement.set_PID(1);
+					newElement.set_MID(1);
+					
+					// 复制单元的节点索引，并调整为全局索引
+					std::vector<Types::Vertex_index> globalNodes;
+					globalNodes.reserve(element.size());
+					
+					for (const auto& localIdx : element) {
+						globalNodes.push_back(localIdx + partOffset);
+					}
+					
+					// 设置调整后的节点索引
+					newElement.set_verticesIndex(globalNodes);
+					globalElementIndex++;
 				}
 			}
 		}

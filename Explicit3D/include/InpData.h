@@ -22,9 +22,8 @@ struct InpPart {
 struct InpInstance {
     std::string name;      // 实例名
     std::string part_name; // 引用的Part名
-    // 新增：坐标变换相关
-    std::array<Types::Real, 3> translation; // 平移向量
     // 新增：节点和单元索引偏移
+    Types::Point<3> translation = {0.0, 0.0, 0.0}; // 平移向量，默认为零向量
     std::size_t node_start_index;    // 全局节点起始索引
     std::size_t element_start_index; // 全局单元起始索引
 };
