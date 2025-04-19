@@ -75,14 +75,7 @@ namespace EnSC {
 		// 遍历其他步骤进行计算（从第二个步骤开始，如果第一个是Initial）
 		size_t startStep = 1; // 总是从第二个步骤开始
 		for (std::size_t stepIndex = startStep; stepIndex < steps.size(); ++stepIndex) {
-			const auto& stepData = steps[stepIndex];
-			spdlog::debug("开始计算步骤 {} (时间周期: {})", stepData.name, stepData.timePeriod);
-			
-			// 打印当前prevBoundary的状态（在切换步骤前）
-			spdlog::debug("切换到步骤 {} 前的prevBoundary状态:", stepIndex);
-			spdlog::debug("  位移约束数量: {}", prevBoundary.spc_nodes.size());
-			spdlog::debug("  速度约束数量: {}", prevBoundary.vel_nodes.size());
-			
+			const auto& stepData = steps[stepIndex];			
 			// 设置当前步骤
 			setCurrentStep(stepIndex);
 			
@@ -1914,26 +1907,36 @@ namespace EnSC {
 			}
 		}
 		
-		// 详细打印当前步骤的边界条件信息
-		spdlog::debug("\n===== 步骤 {} 的边界条件详情 =====", stepData.name);
-		spdlog::debug("固定位移约束数量: {}", currentBoundary.spc_nodes.size());
-		for (const auto& spc : currentBoundary.spc_nodes) {
-			spdlog::debug("  - 约束节点/集合: {}, 自由度范围: {}-{}, 条件类型: {}", 
-				spc.first, (spc.second[0]+1), (spc.second[1]+1), spc.second[2]);
-		}
-		
-		spdlog::debug("速度约束数量: {}", currentBoundary.vel_nodes.size());
-		for (const auto& vel : currentBoundary.vel_nodes) {
-			spdlog::debug("  - 约束节点/集合: {}, 自由度范围: {}-{}, 速度值: {}", 
-				vel.first, (vel.second.first[0]+1), (vel.second.first[1]+1), vel.second.second);
-		}
-		spdlog::debug("=============================================\n");
-		
 		// 立即应用边界条件到当前状态
 		apply_boundary_condition_vec();
 		
 		// 其他特定于步骤的设置可以在这里添加
 		spdlog::debug("Changed to step: {} with time period: {}", stepData.name, stepData.timePeriod);
+		
+		// 在函数末尾打印当前步骤的关键信息总结
+		spdlog::debug("\n===== 步骤 {} 最终加载信息 =====", stepData.name);
+		
+		// 固定边界信息
+		spdlog::debug("固定边界条件: {} 个", currentBoundary.spc_nodes.size());
+		
+		// 速度约束信息
+		spdlog::debug("速度约束条件: {} 个", currentBoundary.vel_nodes.size());
+		
+		// 重力信息
+		if (std::get<0>(stepData.gravity)) {
+			spdlog::debug("重力载荷: 启用 (值={}, 方向=[{},{},{}])", 
+				std::get<2>(stepData.gravity), 
+				std::get<3>(stepData.gravity), 
+				std::get<4>(stepData.gravity), 
+				std::get<5>(stepData.gravity));
+		} else {
+			spdlog::debug("重力载荷: 未启用");
+		}
+		
+		// 分布面载荷信息
+		spdlog::debug("分布面载荷: {} 个", stepData.dsload.size());
+		
+		spdlog::debug("==============================\n");
 	}
 
 	/**
