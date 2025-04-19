@@ -24,7 +24,6 @@ int main() {
 	fin.open("project.txt");
 	if (!fin.is_open()) {
 		spdlog::error("无法打开配置文件: project.txt");
-		std::cout << "Can not open \"project.txt\"" << std::endl;
 		exit(-1);
 	}
 	
@@ -44,7 +43,6 @@ int main() {
 	
 	if (!found_filename) {
 		spdlog::error("无法从project.txt中找到有效的inp文件名");
-		std::cout << "无法从project.txt中找到有效的inp文件名" << std::endl;
 		exit(-1);
 	}
 	
@@ -65,7 +63,7 @@ int main() {
 	// Calculate the duration
 	std::chrono::duration<double> elapsed = end - start;
 	spdlog::info("运行时间: {}秒", elapsed.count());
-	std::cout << "exdynarun.run() took " << elapsed.count() << " seconds." << std::endl;
+	spdlog::info("exdynarun.run() took {} seconds.", elapsed.count());
 	
 	// 关闭日志系统
 	Logger::shutdown();

@@ -170,7 +170,7 @@ namespace EnSC {
 	bool DataIn::END_PART() {
 		currentPartPtr = nullptr;
 		currentState = ParseState::GLOBAL;
-		spdlog::info("结束部件定义: {}", currentPartName); // 替换 std::cout
+		spdlog::debug("结束部件定义: {}", currentPartName); // 替换 std::cout
 		return true;
 	}
 
@@ -182,7 +182,7 @@ namespace EnSC {
 	bool DataIn::END_ASSEMBLY() {
 		currentAssemblyPtr = nullptr;
 		currentState = ParseState::GLOBAL;
-		spdlog::info("结束装配定义: {}", currentAssemblyName); // 替换 std::cout
+		spdlog::debug("结束装配定义: {}", currentAssemblyName); // 替换 std::cout
 		return true;
 	}
 
@@ -193,7 +193,7 @@ namespace EnSC {
 	 */
 	bool DataIn::END_STEP() {
 		currentState = ParseState::GLOBAL;
-		spdlog::info("结束步骤定义: {}", currentStepName); // 替换 std::cout
+		spdlog::debug("结束步骤定义: {}", currentStepName); // 替换 std::cout
 		
 		// 增加更多调试信息
 		if (!exdyna.steps.empty()) {
@@ -244,7 +244,7 @@ namespace EnSC {
 	bool DataIn::END_INSTANCE() {
 		currentInstanceName = "";
 		currentInstancePart = "";
-		spdlog::info("结束实例定义"); // 替换 std::cout
+		spdlog::debug("结束实例定义"); // 替换 std::cout
 		return true;
 	}
 
@@ -283,7 +283,7 @@ namespace EnSC {
 		initialStep.name = "Initial";
 		initialStep.timePeriod = 0.0; // 初始步骤的计算时间为0
 		exdyna.steps.push_back(initialStep);
-		spdlog::info("创建初始步骤 'Initial' 用于收集*Step外的条件"); // 替换 std::cout
+		spdlog::debug("创建初始步骤 'Initial' 用于收集*Step外的条件"); // 替换 std::cout
 
 		// 逐行读取并处理文件内容
 		while (!fin.eof()) {
@@ -312,7 +312,7 @@ namespace EnSC {
 							currentPartPtr = &inp_data.parts.back();
 							currentPartPtr->name = currentPartName;
 							currentState = ParseState::PART_DEFINITION;
-							spdlog::info("进入部件定义模式: {}", currentPartName); // 替换 std::cout
+							spdlog::debug("进入部件定义模式: {}", currentPartName); // 替换 std::cout
 							continue;
 						}
 						else if (str.find("*ASSEMBLY") != std::string::npos) {
@@ -324,13 +324,13 @@ namespace EnSC {
 							currentAssemblyPtr = &inp_data.assemblies.back();
 							currentAssemblyPtr->name = currentAssemblyName;
 							currentState = ParseState::ASSEMBLY_DEFINITION;
-							spdlog::info("进入装配定义模式: {}", currentAssemblyName); // 替换 std::cout
+							spdlog::debug("进入装配定义模式: {}", currentAssemblyName); // 替换 std::cout
 							continue;
 						}
 						else if (str.find("*MATERIAL") != std::string::npos) {
 							currentMaterialName = extractNameFromKeyword(str);
 							currentState = ParseState::MATERIAL_DEFINITION;
-							spdlog::info("进入材料定义模式: {}", currentMaterialName); // 替换 std::cout
+							spdlog::debug("进入材料定义模式: {}", currentMaterialName); // 替换 std::cout
 							continue;
 						}
 						else if (str.find("*STEP") != std::string::npos) {
@@ -348,12 +348,12 @@ namespace EnSC {
 							// 继承逻辑在 setCurrentStep 方法中处理
 							
 							exdyna.steps.push_back(stepData);
-							spdlog::info("进入步骤定义模式: {}", currentStepName); // 替换 std::cout
+							spdlog::debug("进入步骤定义模式: {}", currentStepName); // 替换 std::cout
 							continue;
 						}
 						else if (str.find("*INITIAL CONDITIONS") != std::string::npos) {
 							currentState = ParseState::PREDEFINED_FIELD;
-							spdlog::info("进入预定义场模式"); // 替换 std::cout
+							spdlog::debug("进入预定义场模式"); // 替换 std::cout
 						}
 						
 						// 直接检查是否有对应的处理函数，包括结束标记和实例定义
@@ -455,7 +455,7 @@ namespace EnSC {
 											int interval = std::stoi(intervalStr);
 											exdyna.time_interval = exdyna.totalTime / interval;
 											exdyna.time_interval_set = true;
-											spdlog::info("从输出设置获取间隔数: {}, 设置time_interval={}", interval, exdyna.time_interval); // 替换 std::cout
+											spdlog::debug("从输出设置获取间隔数: {}, 设置time_interval={}", interval, exdyna.time_interval); // 替换 std::cout
 										}
 									}
 									
@@ -490,7 +490,7 @@ namespace EnSC {
 		}
 
 		fin.close();
-		spdlog::info("成功读取文件 {}！", fileName); // 替换 std::cout
+		spdlog::debug("成功读取文件 {}！", fileName); // 替换 std::cout
 		
 		// 新增：调用transferToExDyna()将inp_data转换为exdyna数据
 		transferToExDyna();
@@ -499,21 +499,21 @@ namespace EnSC {
 		exdyna.mMatElastic.update();
 		
 		// 打印解析统计信息
-		spdlog::info("解析完成: "); // 替换 std::cout
+		spdlog::debug("解析完成: "); // 替换 std::cout
 		if (!currentPartName.empty()) {
-			spdlog::info("- 部件名称: {}", currentPartName); // 替换 std::cout
+			spdlog::debug("- 部件名称: {}", currentPartName); // 替换 std::cout
 		}
 		if (!currentAssemblyName.empty()) {
-			spdlog::info("- 装配名称: {}", currentAssemblyName); // 替换 std::cout
+			spdlog::debug("- 装配名称: {}", currentAssemblyName); // 替换 std::cout
 		}
 		if (!currentStepName.empty()) {
-			spdlog::info("- 步骤名称: {}", currentStepName); // 替换 std::cout
+			spdlog::debug("- 步骤名称: {}", currentStepName); // 替换 std::cout
 		}
 		if (!currentMaterialName.empty()) {
-			spdlog::info("- 材料名称: {}", currentMaterialName); // 替换 std::cout
+			spdlog::debug("- 材料名称: {}", currentMaterialName); // 替换 std::cout
 		}
-		spdlog::info("- 节点数量: {}", exdyna.vertices.size()); // 替换 std::cout
-		spdlog::info("- 单元数量: {}", exdyna.hexahedron_elements.size()); // 替换 std::cout
+		spdlog::debug("- 节点数量: {}", exdyna.vertices.size()); // 替换 std::cout
+		spdlog::debug("- 单元数量: {}", exdyna.hexahedron_elements.size()); // 替换 std::cout
 	}
 
 	/**
@@ -1499,7 +1499,7 @@ namespace EnSC {
 			if (!token.empty()) {
 				// 将读取的值设置为exdyna的time_interval
 				exdyna.time_interval = convertString<Types::Real>(token);
-				spdlog::info("从inp文件中读取到输出间隔: {}", exdyna.time_interval); // 替换 std::cout
+				spdlog::debug("从inp文件中读取到输出间隔: {}", exdyna.time_interval); // 替换 std::cout
 				
 				// 标记time_interval已被设置
 				exdyna.time_interval_set = true;
@@ -1537,7 +1537,7 @@ namespace EnSC {
 				if (number_interval > 0) {
 					exdyna.time_interval = exdyna.totalTime / number_interval;
 					exdyna.time_interval_set = true;
-					spdlog::info("从inp文件的*Output设置中读取到number interval={}, 设置time_interval={}", number_interval, exdyna.time_interval); // 替换 std::cout
+					spdlog::debug("从inp文件的*Output设置中读取到number interval={}, 设置time_interval={}", number_interval, exdyna.time_interval); // 替换 std::cout
 				}
 			} catch (const std::exception& e) {
 				spdlog::error("解析OUTPUT的number interval参数时出错: {}", e.what()); // 替换 std::cerr
@@ -1554,7 +1554,7 @@ namespace EnSC {
 
 	// 新增：transferToExDyna方法的实现
 	void DataIn::transferToExDyna() {
-		spdlog::info("=== 开始转换数据到exDyna3D结构 ==="); // 替换 std::cout
+		spdlog::debug("=== 开始转换数据到exDyna3D结构 ==="); // 替换 std::cout
 		
 		// 统计数量
 		size_t totalNodes = 0;
@@ -1741,8 +1741,8 @@ namespace EnSC {
 			}
 		}
 		
-		spdlog::info("数据转换完成: {} 个节点, {} 个单元", exdyna.vertices.size(), exdyna.hexahedron_elements.size()); // 替换 std::cout
-		spdlog::info("=== 转换完成 ===\n"); // 替换 std::cout
+		spdlog::debug("数据转换完成: {} 个节点, {} 个单元", exdyna.vertices.size(), exdyna.hexahedron_elements.size()); // 替换 std::cout
+		spdlog::debug("=== 转换完成 ===\n"); // 替换 std::cout
 	}
 }
 

@@ -12,7 +12,8 @@
 #include <cmath>    // <<< 新增
 #include <iomanip>  // <<< 新增 (用于设置输出精度)
 #include "spdlog/spdlog.h"
-
+#include "BoundaryCondition.h" // 边界条件
+#include "StepData.h"        // 步骤数据
 
 namespace EnSC {
 	using namespace Types;
@@ -66,7 +67,7 @@ namespace EnSC {
 		get_fsiSph_virtualParticles_and_vel(0, 1.0/10.0);
 		
 		// 打印步骤信息进行调试
-		spdlog::info("总步骤数: {}", steps.size());
+		spdlog::debug("总步骤数: {}", steps.size());
 		for (std::size_t i = 0; i < steps.size(); ++i) {
 			logStepInfo(i);
 		}
@@ -75,12 +76,12 @@ namespace EnSC {
 		size_t startStep = 1; // 总是从第二个步骤开始
 		for (std::size_t stepIndex = startStep; stepIndex < steps.size(); ++stepIndex) {
 			const auto& stepData = steps[stepIndex];
-			spdlog::info("开始计算步骤 {} (时间周期: {})", stepData.name, stepData.timePeriod);
+			spdlog::debug("开始计算步骤 {} (时间周期: {})", stepData.name, stepData.timePeriod);
 			
 			// 打印当前prevBoundary的状态（在切换步骤前）
-			spdlog::info("切换到步骤 {} 前的prevBoundary状态:", stepIndex);
-			spdlog::info("  位移约束数量: {}", prevBoundary.spc_nodes.size());
-			spdlog::info("  速度约束数量: {}", prevBoundary.vel_nodes.size());
+			spdlog::debug("切换到步骤 {} 前的prevBoundary状态:", stepIndex);
+			spdlog::debug("  位移约束数量: {}", prevBoundary.spc_nodes.size());
+			spdlog::debug("  速度约束数量: {}", prevBoundary.vel_nodes.size());
 			
 			// 设置当前步骤
 			setCurrentStep(stepIndex);
@@ -206,6 +207,9 @@ namespace EnSC {
 			end_flag = true;
 		}
 		if (write_judger || end_flag) {
+			// 调用printSate()打印当前状态信息
+			printSate();
+			
 			// It might be better to increment time_output only if a write actually happens,
 			// but following the original logic here:
 			time_output += time_interval;
@@ -341,7 +345,7 @@ namespace EnSC {
 						int node_id = std::stoi(set_name.substr(1)) - 1; // 去掉#前缀，并转换为0-索引
 						const auto dof0 = node_id * 3;
 						solution_v[dof0 + dof_idx] = vel_value;
-						spdlog::info("为节点 {} 的自由度 {} 设置初始速度: {}", 
+						spdlog::debug("为节点 {} 的自由度 {} 设置初始速度: {}", 
 							(node_id + 1), (dof_idx + 1), vel_value);
 					}
 					catch (const std::exception& e) {
@@ -357,7 +361,7 @@ namespace EnSC {
 							const auto dof0 = node_id * 3;
 							solution_v[dof0 + dof_idx] = vel_value;
 						}
-						spdlog::info("为节点集 {} 的 {} 个节点的自由度 {} 设置初始速度: {}", 
+						spdlog::debug("为节点集 {} 的 {} 个节点的自由度 {} 设置初始速度: {}", 
 							set_name, it->second.size(), (dof_idx + 1), vel_value);
 					}
 					else {
@@ -748,7 +752,7 @@ namespace EnSC {
 				fin >> time_interval;
 			} else {
 				// 如果已在inp中设置，则跳过project.txt中的time_interval
-				spdlog::info("跳过project.txt中的time_interval，使用inp文件中的设置: {}", time_interval);
+				spdlog::debug("跳过project.txt中的time_interval，使用inp文件中的设置: {}", time_interval);
 			}
 		} else {
 			// 如果只有文件名，将在读取inp后设置time_interval
@@ -769,7 +773,6 @@ namespace EnSC {
 		apply_boundary_condition_a();
 		compute_a();
 		output_results();
-		printSate();
 		update_velocity();
 		update_displacement();
 		move_mesh();
@@ -1118,39 +1121,38 @@ namespace EnSC {
 
 	void exDyna3D::printSate() {
 		static int result_Real = 0;
-		if (result_Real % 5000 == 0) {
-			printf("Soild Time: %.5e ; Time step: %d ; dt: %.5e\n", time, result_Real, dt_i);
-			
-			// 使用spdlog记录额外的调试信息
-			spdlog::debug("系统信息 - 节点数量: {}, 单元数量: {}", vertices.size(), hexahedron_elements.size());
-			
-			// 计算当前最大位移量
-			double max_disp = 0.0;
-			for (int i = 0; i < solution_u.size(); i++) {
-				max_disp = std::max(max_disp, std::abs(solution_u(i)));
-			}
-			spdlog::debug("最大位移量: {:.6e}", max_disp);
-			
-			// 计算当前最大速度
-			double max_vel = 0.0;
-			for (int i = 0; i < solution_v.size(); i++) {
-				max_vel = std::max(max_vel, std::abs(solution_v(i)));
-			}
-			spdlog::debug("最大速度: {:.6e}", max_vel);
-			
-			// 计算当前最大加速度
-			double max_accel = 0.0;
-			for (int i = 0; i < solution_a.size(); i++) {
-				max_accel = std::max(max_accel, std::abs(solution_a(i)));
-			}
-			spdlog::debug("最大加速度: {:.6e}", max_accel);
-			
-			// 如果需要，记录有关边界条件的信息
-			if (currentStepIndex < steps.size()) {
-				spdlog::debug("当前步骤: {} (索引: {})", steps[currentStepIndex].name, currentStepIndex);
-				spdlog::debug("边界条件 - 固定约束: {}, 速度约束: {}", 
-					currentBoundary.spc_nodes.size(), currentBoundary.vel_nodes.size());
-			}
+		// 移除了if (result_Real % 5000 == 0)判断
+		spdlog::info("Soild Time: {:.5e} ; Time step: {} ; dt: {:.5e}", time, result_Real, dt_i);
+		
+		// 使用spdlog记录额外的调试信息
+		spdlog::debug("系统信息 - 节点数量: {}, 单元数量: {}", vertices.size(), hexahedron_elements.size());
+		
+		// 计算当前最大位移量
+		double max_disp = 0.0;
+		for (int i = 0; i < solution_u.size(); i++) {
+			max_disp = std::max(max_disp, std::abs(solution_u(i)));
+		}
+		spdlog::debug("最大位移量: {:.6e}", max_disp);
+		
+		// 计算当前最大速度
+		double max_vel = 0.0;
+		for (int i = 0; i < solution_v.size(); i++) {
+			max_vel = std::max(max_vel, std::abs(solution_v(i)));
+		}
+		spdlog::debug("最大速度: {:.6e}", max_vel);
+		
+		// 计算当前最大加速度
+		double max_accel = 0.0;
+		for (int i = 0; i < solution_a.size(); i++) {
+			max_accel = std::max(max_accel, std::abs(solution_a(i)));
+		}
+		spdlog::debug("最大加速度: {:.6e}", max_accel);
+		
+		// 如果需要，记录有关边界条件的信息
+		if (currentStepIndex < steps.size()) {
+			spdlog::debug("当前步骤: {} (索引: {})", steps[currentStepIndex].name, currentStepIndex);
+			spdlog::debug("边界条件 - 固定约束: {}, 速度约束: {}", 
+				currentBoundary.spc_nodes.size(), currentBoundary.vel_nodes.size());
 		}
 		result_Real++;
 	}
@@ -1364,8 +1366,7 @@ namespace EnSC {
 		// resizeFsiSharedData 仍然需要，以调整力的向量大小
 		resizeFsiSharedData();
 
-		std::cout << "生成了 " << fsi_share_data.FSI_virtualParticles_coordinates.size()
-				  << " 个最终虚拟粒子（沿法线生成，可能经过合并）。" << std::endl;
+		spdlog::info("生成了{}个虚粒子", fsi_share_data.FSI_virtualParticles_coordinates.size());
 	}
 
 	void exDyna3D::populateElementMatrices(int eleIdx, Eigen::Matrix<Types::Real, 8, 3>& xyzMatrix,
@@ -1751,26 +1752,26 @@ namespace EnSC {
 		}
 		
 		// 打印当前边界条件状态（用于调试）
-		spdlog::info("设置步骤 {} 前的状态：", stepIndex);
-		spdlog::info("  当前步骤索引: {}", currentStepIndex);
-		spdlog::info("  currentBoundary位移约束数量: {}", currentBoundary.spc_nodes.size());
-		spdlog::info("  currentBoundary速度约束数量: {}", currentBoundary.vel_nodes.size());
-		spdlog::info("  prevBoundary位移约束数量: {}", prevBoundary.spc_nodes.size());
-		spdlog::info("  prevBoundary速度约束数量: {}", prevBoundary.vel_nodes.size());
+		spdlog::debug("设置步骤 {} 前的状态：", stepIndex);
+		spdlog::debug("  当前步骤索引: {}", currentStepIndex);
+		spdlog::debug("  currentBoundary位移约束数量: {}", currentBoundary.spc_nodes.size());
+		spdlog::debug("  currentBoundary速度约束数量: {}", currentBoundary.vel_nodes.size());
+		spdlog::debug("  prevBoundary位移约束数量: {}", prevBoundary.spc_nodes.size());
+		spdlog::debug("  prevBoundary速度约束数量: {}", prevBoundary.vel_nodes.size());
 		
 		// 避免重复设置同一个步骤
 		if (stepIndex == currentStepIndex) {
-			spdlog::info("步骤 {} 已经是当前步骤，跳过重复设置", stepIndex);
+			spdlog::debug("步骤 {} 已经是当前步骤，跳过重复设置", stepIndex);
 			return;
 		}
 		
 		// 在更新当前步骤索引前，保存当前边界条件
 		// 对于从Initial(步骤0)到Step-1(步骤1)的特殊情况，确保保存Initial的边界条件
 		if (currentStepIndex == 0 && stepIndex == 1) {
-			spdlog::info("从Initial步骤切换到Step-1，保存Initial的边界条件");
+			spdlog::debug("从Initial步骤切换到Step-1，保存Initial的边界条件");
 			prevBoundary = currentBoundary;
-			spdlog::info("  保存后prevBoundary位移约束数量: {}", prevBoundary.spc_nodes.size());
-			spdlog::info("  保存后prevBoundary速度约束数量: {}", prevBoundary.vel_nodes.size());
+			spdlog::debug("  保存后prevBoundary位移约束数量: {}", prevBoundary.spc_nodes.size());
+			spdlog::debug("  保存后prevBoundary速度约束数量: {}", prevBoundary.vel_nodes.size());
 		} else if (stepIndex > 0) {
 			prevBoundary = currentBoundary;
 		}
@@ -1785,29 +1786,29 @@ namespace EnSC {
 		if (stepIndex == 0) {
 			// 第一步，直接用自身
 			currentBoundary = stepData.boundary;
-			spdlog::info("步骤 0: 使用自身定义的边界条件");
-			spdlog::info("  steps[0]的位移约束数量: {}", stepData.boundary.spc_nodes.size());
-			spdlog::info("  steps[0]的速度约束数量: {}", stepData.boundary.vel_nodes.size());
+			spdlog::debug("步骤 0: 使用自身定义的边界条件");
+			spdlog::debug("  steps[0]的位移约束数量: {}", stepData.boundary.spc_nodes.size());
+			spdlog::debug("  steps[0]的速度约束数量: {}", stepData.boundary.vel_nodes.size());
 			
 			// 确保边界条件不为空（如果在数据中有定义）
 			if (stepData.boundary.spc_nodes.size() > 0 && currentBoundary.spc_nodes.size() == 0) {
 				 spdlog::warn("警告：currentBoundary.spc_nodes为空，但steps[0].boundary.spc_nodes不为空");
-				 spdlog::info("直接从steps[0]复制边界条件");
+				 spdlog::debug("直接从steps[0]复制边界条件");
 				 currentBoundary.spc_nodes = stepData.boundary.spc_nodes;
 			}
 		} else {
 			// 继承逻辑：当前步骤的边界条件加上前一步的边界条件
 			
 			// 打印前一步边界条件的信息（调试用）
-			spdlog::info("步骤 {} 将继承前一步的边界条件", stepIndex);
-			spdlog::info("  前一步位移约束数量: {}", prevBoundary.spc_nodes.size());
-			spdlog::info("  前一步速度约束数量: {}", prevBoundary.vel_nodes.size());
+			spdlog::debug("步骤 {} 将继承前一步的边界条件", stepIndex);
+			spdlog::debug("  前一步位移约束数量: {}", prevBoundary.spc_nodes.size());
+			spdlog::debug("  前一步速度约束数量: {}", prevBoundary.vel_nodes.size());
 			
 			// 1. 处理位移边界条件
 			if (stepData.resetSpcBoundary) {
 				// 如果当前步骤重置了位移边界条件，只使用当前步骤的约束
 				currentBoundary.spc_nodes = stepData.boundary.spc_nodes;
-				spdlog::info("步骤 {} 重置了位移约束 (op=NEW)，不继承之前的位移约束", stepIndex);
+				spdlog::debug("步骤 {} 重置了位移约束 (op=NEW)，不继承之前的位移约束", stepIndex);
 			} else {
 				// 先保存当前步骤自己的约束
 				currentBoundary.spc_nodes = stepData.boundary.spc_nodes;
@@ -1821,18 +1822,18 @@ namespace EnSC {
 						prevBoundary.spc_nodes.end()
 					);
 					size_t after_size = currentBoundary.spc_nodes.size();
-					spdlog::info("步骤 {} 将前一步骤的位移约束添加到当前约束后（从{}增加到{}）", 
+					spdlog::debug("步骤 {} 将前一步骤的位移约束添加到当前约束后（从{}增加到{}）", 
 						stepIndex, before_size, after_size);
 				} else {
 					spdlog::warn("警告：prevBoundary.spc_nodes为空，无法继承前一步的位移约束");
 					// 检查前一步骤的原始数据
 					const auto& prevStepData = steps[stepIndex - 1];
-					spdlog::info("  检查steps[{}]的原始边界条件：", (stepIndex-1));
-					spdlog::info("  位移约束数量: {}", prevStepData.boundary.spc_nodes.size());
+					spdlog::debug("  检查steps[{}]的原始边界条件：", (stepIndex-1));
+					spdlog::debug("  位移约束数量: {}", prevStepData.boundary.spc_nodes.size());
 					
 					// 如果prevBoundary为空但原始数据不为空，则尝试直接使用原始数据
 					if (prevStepData.boundary.spc_nodes.size() > 0) {
-						spdlog::info("  尝试直接使用steps[{}]的原始边界条件", (stepIndex-1));
+						spdlog::debug("  尝试直接使用steps[{}]的原始边界条件", (stepIndex-1));
 						currentBoundary.spc_nodes.insert(
 							currentBoundary.spc_nodes.end(),
 							prevStepData.boundary.spc_nodes.begin(),
@@ -1846,7 +1847,7 @@ namespace EnSC {
 			if (stepData.resetVelBoundary) {
 				// 如果当前步骤重置了速度边界条件，只使用当前步骤的约束
 				currentBoundary.vel_nodes = stepData.boundary.vel_nodes;
-				spdlog::info("步骤 {} 重置了速度约束 (op=NEW, type=VELOCITY)，不继承之前的速度约束", stepIndex);
+				spdlog::debug("步骤 {} 重置了速度约束 (op=NEW, type=VELOCITY)，不继承之前的速度约束", stepIndex);
 			} else {
 				// 先保存当前步骤自己的约束
 				currentBoundary.vel_nodes = stepData.boundary.vel_nodes;
@@ -1860,7 +1861,7 @@ namespace EnSC {
 						prevBoundary.vel_nodes.end()
 					);
 					size_t after_size = currentBoundary.vel_nodes.size();
-					spdlog::info("步骤 {} 将前一步骤的速度约束添加到当前约束后（从{}增加到{}）", 
+					spdlog::debug("步骤 {} 将前一步骤的速度约束添加到当前约束后（从{}增加到{}）", 
 						stepIndex, before_size, after_size);
 				}
 			}
@@ -1869,50 +1870,50 @@ namespace EnSC {
 			const auto& prevStepData = steps[stepIndex - 1];
 			if (stepData.resetDload) {
 				// 如果当前步骤重置了分布载荷，只使用当前步骤的重力设置
-				spdlog::info("步骤 {} 重置了分布载荷 (op=NEW)，不继承之前的重力设置", stepIndex);
+				spdlog::debug("步骤 {} 重置了分布载荷 (op=NEW)，不继承之前的重力设置", stepIndex);
 			} else {
 				// 如果当前步骤没有激活重力但前面步骤有
 				if (!std::get<0>(stepData.gravity) && std::get<0>(prevStepData.gravity)) {
 					// 继承前一步骤的重力设置
 					steps[stepIndex].gravity = prevStepData.gravity;
-					spdlog::info("步骤 {} 继承了前一步骤的重力设置", stepIndex);
+					spdlog::debug("步骤 {} 继承了前一步骤的重力设置", stepIndex);
 				}
 			}
 			
 			// 4. 处理分布面载荷继承 (这里仍然使用step数据，因为dsload存储在StepData中)
 			if (stepData.resetDsload) {
 				// 如果当前步骤重置了分布面载荷，只使用当前步骤的设置
-				spdlog::info("步骤 {} 重置了分布面载荷 (op=NEW)，不继承之前的分布面载荷", stepIndex);
+				spdlog::debug("步骤 {} 重置了分布面载荷 (op=NEW)，不继承之前的分布面载荷", stepIndex);
 			} else {
 				// 如果当前步骤没有分布面载荷但前面步骤有
 				if (stepData.dsload.empty() && !prevStepData.dsload.empty()) {
 					// 继承前一步骤的分布面载荷设置
 					steps[stepIndex].dsload = prevStepData.dsload;
-					spdlog::info("步骤 {} 继承了前一步骤的分布面载荷", stepIndex);
+					spdlog::debug("步骤 {} 继承了前一步骤的分布面载荷", stepIndex);
 				}
 			}
 		}
 		
 		// 详细打印当前步骤的边界条件信息
-		spdlog::info("\n===== 步骤 {} 的边界条件详情 =====", stepData.name);
-		spdlog::info("固定位移约束数量: {}", currentBoundary.spc_nodes.size());
+		spdlog::debug("\n===== 步骤 {} 的边界条件详情 =====", stepData.name);
+		spdlog::debug("固定位移约束数量: {}", currentBoundary.spc_nodes.size());
 		for (const auto& spc : currentBoundary.spc_nodes) {
-			spdlog::info("  - 约束节点/集合: {}, 自由度范围: {}-{}, 条件类型: {}", 
+			spdlog::debug("  - 约束节点/集合: {}, 自由度范围: {}-{}, 条件类型: {}", 
 				spc.first, (spc.second[0]+1), (spc.second[1]+1), spc.second[2]);
 		}
 		
-		spdlog::info("速度约束数量: {}", currentBoundary.vel_nodes.size());
+		spdlog::debug("速度约束数量: {}", currentBoundary.vel_nodes.size());
 		for (const auto& vel : currentBoundary.vel_nodes) {
-			spdlog::info("  - 约束节点/集合: {}, 自由度范围: {}-{}, 速度值: {}", 
+			spdlog::debug("  - 约束节点/集合: {}, 自由度范围: {}-{}, 速度值: {}", 
 				vel.first, (vel.second.first[0]+1), (vel.second.first[1]+1), vel.second.second);
 		}
-		spdlog::info("=============================================\n");
+		spdlog::debug("=============================================\n");
 		
 		// 立即应用边界条件到当前状态
 		apply_boundary_condition_vec();
 		
 		// 其他特定于步骤的设置可以在这里添加
-		spdlog::info("Changed to step: {} with time period: {}", stepData.name, stepData.timePeriod);
+		spdlog::debug("Changed to step: {} with time period: {}", stepData.name, stepData.timePeriod);
 	}
 
 	/**
@@ -1936,13 +1937,13 @@ namespace EnSC {
 				if (total_frames < 10) {
 					// 如果总帧数少于10，调整为10帧
 					time_interval = totalTime / 10.0;
-					spdlog::info("totalTime较小，调整为输出10帧，time_interval = {}", time_interval);
+					spdlog::debug("totalTime较小，调整为输出10帧，time_interval = {}", time_interval);
 				} else if (total_frames > 1000) {
 					// 如果总帧数超过1000，调整为1000帧
 					time_interval = totalTime / 1000.0;
-					spdlog::info("totalTime较大，调整为输出1000帧，time_interval = {}", time_interval);
+					spdlog::debug("totalTime较大，调整为输出1000帧，time_interval = {}", time_interval);
 				} else {
-					spdlog::info("设置time_interval = {}（每秒50帧）", time_interval);
+					spdlog::debug("设置time_interval = {}（每秒50帧）", time_interval);
 				}
 			}
 		}
@@ -1950,34 +1951,56 @@ namespace EnSC {
 		// 确保time_interval不超过totalTime
 		if (time_interval > totalTime && totalTime > 0.0) {
 			time_interval = totalTime;
-			spdlog::info("time_interval超过totalTime，已调整为{}", time_interval);
+			spdlog::debug("time_interval超过totalTime，已调整为{}", time_interval);
 		}
 	}
 
 	// 新增：调试打印set信息
 	void exDyna3D::printSetInfo() {
-		spdlog::info("\n==== 节点集 (Node Sets) ====");
+		spdlog::debug("\n==== 节点集 (Node Sets) ====");
 		for (const auto& pair : map_set_node_list) {
-			std::string nodeListStr;
-			for (size_t i = 0; i < pair.second.size(); ++i) {
-				nodeListStr += std::to_string(pair.second[i]);
-				if (i != pair.second.size() - 1) nodeListStr += ", ";
+			int first, last, difference;
+			if (pair.second.size() > 10 && exDyna3D::isArithmeticSequence(pair.second, first, last, difference)) {
+				// 是等差数列，简洁打印
+				spdlog::debug("节点集: {} 包含 {} 个节点: 等差数列 [{}:{}:{}]", 
+					pair.first, pair.second.size(), first, difference, last);
+			} else {
+				// 不是等差数列或元素很少，完整打印
+				std::string nodeListStr;
+				for (size_t i = 0; i < std::min(pair.second.size(), size_t(10)); ++i) {
+					nodeListStr += std::to_string(pair.second[i]);
+					if (i != std::min(pair.second.size(), size_t(10)) - 1) nodeListStr += ", ";
+				}
+				if (pair.second.size() > 10) {
+					nodeListStr += ", ...";
+				}
+				spdlog::debug("节点集: {} 包含 {} 个节点: {}", 
+					pair.first, pair.second.size(), nodeListStr);
 			}
-			spdlog::info("节点集: {} 包含 {} 个节点: {}", 
-				pair.first, pair.second.size(), nodeListStr);
 		}
 		
-		spdlog::info("\n==== 单元集 (Element Sets) ====");
+		spdlog::debug("\n==== 单元集 (Element Sets) ====");
 		for (const auto& pair : map_set_ele_list) {
-			std::string elemListStr;
-			for (size_t i = 0; i < pair.second.size(); ++i) {
-				elemListStr += std::to_string(pair.second[i]);
-				if (i != pair.second.size() - 1) elemListStr += ", ";
+			int first, last, difference;
+			if (pair.second.size() > 10 && exDyna3D::isArithmeticSequence(pair.second, first, last, difference)) {
+				// 是等差数列，简洁打印
+				spdlog::debug("单元集: {} 包含 {} 个单元: 等差数列 [{}:{}:{}]", 
+					pair.first, pair.second.size(), first, difference, last);
+			} else {
+				// 不是等差数列或元素很少，完整打印
+				std::string elemListStr;
+				for (size_t i = 0; i < std::min(pair.second.size(), size_t(10)); ++i) {
+					elemListStr += std::to_string(pair.second[i]);
+					if (i != std::min(pair.second.size(), size_t(10)) - 1) elemListStr += ", ";
+				}
+				if (pair.second.size() > 10) {
+					elemListStr += ", ...";
+				}
+				spdlog::debug("单元集: {} 包含 {} 个单元: {}", 
+					pair.first, pair.second.size(), elemListStr);
 			}
-			spdlog::info("单元集: {} 包含 {} 个单元: {}", 
-				pair.first, pair.second.size(), elemListStr);
 		}
-		spdlog::info("============================\n");
+		spdlog::debug("============================\n");
 	}
 
 	void exDyna3D::apply_boundary_condition_a() {
@@ -2106,14 +2129,14 @@ namespace EnSC {
 		}
 
 		const auto& stepData = steps[stepIndex];
-		spdlog::info("步骤 {}: {} 时间周期={} 约束条件数={} 速度条件数={} 重置位移边界={} 重置速度边界={} 重置分布载荷={} 重置分布面载荷={}", 
+		spdlog::debug("步骤 {}: {} 时间周期={} 约束条件数={} 速度条件数={} 重置位移边界={} 重置速度边界={} 重置分布载荷={} 重置分布面载荷={}", 
 			stepIndex, stepData.name, stepData.timePeriod, 
 			stepData.boundary.spc_nodes.size(), stepData.boundary.vel_nodes.size(),
 			(stepData.resetSpcBoundary ? "是" : "否"), (stepData.resetVelBoundary ? "是" : "否"),
 			(stepData.resetDload ? "是" : "否"), (stepData.resetDsload ? "是" : "否"));
 		
 		// 打印当前步骤的约束信息（包括继承的约束）
-		spdlog::info("---- 当前步骤约束信息 ----");
+		spdlog::debug("---- 当前步骤约束信息 ----");
 		
 		// 计算受约束的总节点数
 		size_t total_spc_nodes = 0;
@@ -2126,9 +2149,9 @@ namespace EnSC {
 			total_vel_nodes += vel.first.size();
 		}
 		
-		spdlog::info("固定约束数量: {} (涉及 {} 个节点)", 
+		spdlog::debug("固定约束数量: {} (涉及 {} 个节点)", 
 			currentBoundary.spc_nodes.size(), total_spc_nodes);
-		spdlog::info("速度约束数量: {} (涉及 {} 个节点)", 
+		spdlog::debug("速度约束数量: {} (涉及 {} 个节点)", 
 			currentBoundary.vel_nodes.size(), total_vel_nodes);
 		
 		// 标记是否有继承的约束
@@ -2163,12 +2186,29 @@ namespace EnSC {
 			}
 			
 			if (has_inherited_spc) {
-				spdlog::info("固定约束继承自Initial或前一步");
+				spdlog::debug("固定约束继承自Initial或前一步");
 			}
 			if (has_inherited_vel) {
-				spdlog::info("速度约束继承自Initial或前一步");
+				spdlog::debug("速度约束继承自Initial或前一步");
 			}
 		}
-		spdlog::info("-------------------------");
+		spdlog::debug("-------------------------");
+	}
+
+	// 检查序列是否为等差数列的辅助函数
+	bool exDyna3D::isArithmeticSequence(const std::vector<std::size_t>& sequence, int& first, int& last, int& difference) {
+		if (sequence.size() < 2) return false;
+		
+		first = sequence[0];
+		last = sequence[sequence.size() - 1];
+		difference = sequence[1] - sequence[0];
+		
+		// 检查每对相邻元素的差是否相等
+		for (size_t i = 1; i < sequence.size(); ++i) {
+			if (sequence[i] - sequence[i-1] != difference) {
+				return false;
+			}
+		}
+		return true;
 	}
 }

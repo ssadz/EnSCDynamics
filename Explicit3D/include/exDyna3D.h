@@ -61,6 +61,9 @@ namespace EnSC {
 		// 新增：打印步骤信息的函数
 		void logStepInfo(std::size_t stepIndex) const;
 
+		// 新增：检查序列是否为等差数列的辅助函数
+		static bool isArithmeticSequence(const std::vector<std::size_t>& sequence, int& first, int& last, int& difference);
+
 	protected:
 		// --- 初始化相关方法 ---
 		virtual void init_data();           // 初始化数据结构，分配大小

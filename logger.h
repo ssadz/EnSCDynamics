@@ -38,6 +38,10 @@ public:
                 auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>("logs/enscdynamics_debug.log", true);
                 file_sink->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%t] [%l] %v");
                 
+                // 设置文件日志级别为debug，控制台日志级别为info
+                console_sink->set_level(spdlog::level::info);
+                file_sink->set_level(spdlog::level::debug);
+                
                 // 组合接收器
                 spdlog::sinks_init_list sink_list = { console_sink, file_sink };
                 auto logger = std::make_shared<spdlog::logger>("EnSCDynamics", sink_list.begin(), sink_list.end());
@@ -46,7 +50,7 @@ public:
                 spdlog::set_default_logger(logger);
                 spdlog::set_level(spdlog::level::debug);
                 spdlog::flush_on(spdlog::level::debug);
-                spdlog::info("Logger 初始化 - Debug 模式 (显示 debug 及以上级别日志，同时输出到控制台和文件: logs/enscdynamics_debug.log)");
+                spdlog::info("Logger 初始化 - Debug 模式 (控制台显示 info 及以上级别，文件记录 debug 及以上级别，输出到: logs/enscdynamics_debug.log)");
 
             #elif defined(CMAKE_BUILD_TYPE_RELWITHDEBINFO) || defined(RELWITHDEBINFO) || defined(RelWithDebInfo) || defined(_RELWITHDEBINFO) || defined(RelW) || defined(_RelW)
                 // RelWithDebInfo 模式: 显示重要的调试信息，同时输出到控制台和文件
@@ -57,6 +61,10 @@ public:
                 auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>("logs/enscdynamics_relwithdebinfo.log", true);
                 file_sink->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%t] [%l] %v");
                 
+                // 设置文件日志级别为debug，控制台日志级别为info
+                console_sink->set_level(spdlog::level::info);
+                file_sink->set_level(spdlog::level::debug);
+                
                 // 组合接收器
                 spdlog::sinks_init_list sink_list = { console_sink, file_sink };
                 auto logger = std::make_shared<spdlog::logger>("EnSCDynamics", sink_list.begin(), sink_list.end());
@@ -65,15 +73,16 @@ public:
                 spdlog::set_default_logger(logger);
                 spdlog::set_level(spdlog::level::debug);
                 spdlog::flush_on(spdlog::level::debug);
-                spdlog::info("Logger 初始化 - RelWithDebInfo 模式 (显示 debug 及以上级别日志，同时输出到控制台和文件: logs/enscdynamics_relwithdebinfo.log)");
+                spdlog::info("Logger 初始化 - RelWithDebInfo 模式 (控制台显示 info 及以上级别，文件记录 debug 及以上级别，输出到: logs/enscdynamics_relwithdebinfo.log)");
                 
             #else
-                // Release 模式: 不显示任何日志信息，只使用控制台接收器
+                // Release 模式: 显示 info 及以上级别的日志信息，只使用控制台接收器
                 auto logger = std::make_shared<spdlog::logger>("EnSCDynamics", console_sink);
                 spdlog::set_default_logger(logger);
-                spdlog::set_level(spdlog::level::off);
-                spdlog::flush_on(spdlog::level::critical); // 只在关键错误时刷新
-                // 初始化消息也不会显示，因为日志级别设置为 off
+                // 将日志级别设置为 info，以便在 Release 模式下输出 info 级别的日志
+                spdlog::set_level(spdlog::level::info);
+                spdlog::flush_on(spdlog::level::info); // 每次 info 消息都刷新
+                spdlog::info("Logger 初始化 - Release 模式 (显示 info 及以上级别日志，仅输出到控制台)");
             #endif
 
         } catch (const spdlog::spdlog_ex& ex) {
