@@ -89,9 +89,20 @@ namespace EnSC {
 			// 设置步骤的结束时间
 			Types::Real stepEndTime = time + stepData.timePeriod;
 			
-			// 计算时间步
+			// 修改计算时间步的循环条件，预判是否会超过目标时间
 			while (time < stepEndTime) {
 				update_minVertex_perMaterial_and_dt();
+				
+				// 预判下一步是否会超过目标时间
+				if (time + dt_i_1 > stepEndTime) {
+					// 确定剩余时间
+					Types::Real remaining_time = stepEndTime - time;
+					
+					// 调整时间步长使其恰好到达目标时间
+					dt_i = dt_i_1 = remaining_time;
+					spdlog::debug("调整最后一步的时间步长为 {:.6e}，以精确到达目标时间 {:.6e}", dt_i_1, stepEndTime);
+				}
+				
 				computeSate();
 			}
 		}
@@ -673,8 +684,11 @@ namespace EnSC {
 		Real tmp_dt = dtStable.minCoeff();
 		dt_i = dt_i < tmp_dt ? dt_i : tmp_dt;
 		dt_i *= factor_timeStep;
+		
+		// 检查是否接近总时间，避免超过，确保精确到达（防止多步计算）
 		if ((totalTime - time_prev) < dt_i && (totalTime - time_prev) > zero) {
 			dt_i = totalTime - time_prev;
+			dt_i_1 = dt_i; // 确保dt_i_1与dt_i一致
 		}
 	}
 
@@ -766,6 +780,12 @@ namespace EnSC {
 
 	void exDyna3D::computeSate() {
 		time += dt_i_1;
+		
+		// 确保时间不超过totalTime
+		if (time > totalTime) {
+			time = totalTime;
+		}
+		
 		apply_boundary_condition_vec();
 		apply_fsiSph_nodeForce();
 		add_inForce_to_rhs();
